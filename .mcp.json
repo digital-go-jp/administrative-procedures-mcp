@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "admin-procedures": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--extra",
+        "excel",
+        "python",
+        "-m",
+        "admin_procedures"
+      ]
+    }
+  }
+}

@@ -1,0 +1,79 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Local config
+.env
+.env.local
+*.local.json
+mcp.json
+
+# Claude Code / Codex / AI tools
+.claude/
+CLAUDE.md
+.codex/
+.aider*
+.cursor/
+
+# Salesforce
+.sfdx/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+
+# uv
+# uv.lock はコミットする (依存の再現性・サプライチェーン対策。DS-202/DS-203)
+.python-version
+
+# 調査結果データ（配布元で改訂されるため同梱しない。apcli fetch で取得する）
+datasets/*/data.parquet
+datasets/*/.fetch.json
+datasets/*/dataset.yaml.bak
+source-data/
+
+# apcli preview の実行ログ・eval 結果 (実行時に生成される)
+tests/evals/results/

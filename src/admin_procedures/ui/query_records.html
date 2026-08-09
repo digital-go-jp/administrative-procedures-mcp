@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>query_records</title>
+<style>
+/* INLINE_BASE_CSS */
+.missing-icon {
+  display: inline-block;
+  width: 18px; height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 50%;
+  background: var(--yellow-bg);
+  color: var(--yellow);
+  font-size: 1rem;
+  cursor: help;
+  margin-left: 4px;
+}
+/* 詳細ダイアログ */
+.detail-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.detail-dialog {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-width: 640px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 20px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+.detail-dialog h2 {
+  font-size: 1rem;
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.detail-dialog .close-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 4px 12px;
+}
+.detail-dialog .close-btn:hover {
+  background: var(--bg-alt);
+}
+.detail-row {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 1rem;
+}
+.detail-row:last-child { border-bottom: none; }
+.detail-label {
+  flex: 0 0 200px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+.detail-value {
+  flex: 1;
+  word-break: break-all;
+}
+.detail-value.empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.show-more-btn {
+  display: block;
+  margin: 8px auto 0;
+  padding: 8px 20px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 1rem;
+}
+.show-more-btn:hover {
+  background: var(--accent-light);
+}
+</style>
+</head>
+<body>
+<div id="app"><p class="text-muted">データを読み込み中…</p></div>
+<script>/* INLINE_ECHARTS_JS */</script>
+<script type="module">
+/* INLINE_BASE_JS */
+
+onData(function(data) {
+  var app = document.getElementById("app");
+  app.innerHTML = "";
+
+  if (data.error) {
+    showError(app, data.error);
+    return;
+  }
+
+  var records = data.columns ? columnarToRecords(data) : (data.records || []);
+
+  createCollapsible(app, {
+    label: "データ検索",
+    toggleLabel: "テーブルを表示",
+    info: [
+      { text: data.dataset_id || "" },
+      { text: fmtNum(records.length) + " / " + fmtNum(data.total) + " 件" },
+    ],
+  }, buildContent);
+
+  function buildContent(container) {
+    /* クエリ条件表示 */
+    var qcEl = buildQueryConditions(data.query_params);
+    if (qcEl) container.appendChild(qcEl);
+
+    if (records.length === 0) {
+      container.innerHTML = '<p class="text-muted mt-16">該当レコードなし</p>';
+      if (data.hint) {
+        container.innerHTML += '<p class="text-muted">' + escapeHtml(data.hint) + "</p>";
+      }
+      return;
+    }
+
+    // サマリーカード
+    var cards = document.createElement("div");
+    cards.className = "summary-cards mt-8";
+    cards.appendChild(createCard("総件数", fmtNum(data.total)));
+    cards.appendChild(createCard("表示件数", fmtNum(records.length)));
+    container.appendChild(cards);
+
+    // カラム決定: columnar の columns またはレコードのキー
+    var columns = data.columns || Object.keys(records[0]).filter(function(k) {
+      return k !== "__missing_fields";
+    });
+
+    // 全カラム（詳細ダイアログ用）
+    var allColumns = columns;
+
+    // 数値カラム判定
+    var numericCols = new Set();
+    columns.forEach(function(col) {
+      for (var i = 0; i < Math.min(records.length, 10); i++) {
+        var v = records[i][col];
+        if (v != null && typeof v === "number") { numericCols.add(col); break; }
+      }
+    });
+
+    var fm = data.field_metadata || {};
+
+    // --- 詳細ダイアログ ---
+    function showDetail(row) {
+      var overlay = document.createElement("div");
+      overlay.className = "detail-overlay";
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.addEventListener("click", function(e) {
+        if (e.target === overlay) overlay.remove();
+      });
+      overlay.addEventListener("keydown", function(e) {
+        if (e.key === "Escape") overlay.remove();
+      });
+
+      var dialog = document.createElement("div");
+      dialog.className = "detail-dialog";
+
+      // タイトル行
+      var titleRow = document.createElement("h2");
+      var titleText = document.createElement("span");
+      var titleVal = row["procedure_id"] || row[allColumns[0]] || "";
+      titleText.textContent = "レコード詳細" + (titleVal ? " — " + titleVal : "");
+      titleRow.appendChild(titleText);
+      var closeBtn = document.createElement("button");
+      closeBtn.className = "close-btn";
+      closeBtn.textContent = "閉じる";
+      closeBtn.setAttribute("aria-label", "詳細ダイアログを閉じる");
+      closeBtn.addEventListener("click", function() { overlay.remove(); });
+      titleRow.appendChild(closeBtn);
+      dialog.appendChild(titleRow);
+
+      // 全フィールド表示
+      allColumns.forEach(function(col) {
+        var detailRow = document.createElement("div");
+        detailRow.className = "detail-row";
+
+        var labelEl = document.createElement("div");
+        labelEl.className = "detail-label";
+        var m = fm[col];
+        if (m) {
+          labelEl.innerHTML =
+            '<span class="field-badge ' + escapeHtml(m.role) + '">' + escapeHtml(roleLabel(m.role)) + '</span> ' +
+            escapeHtml(col);
+        } else {
+          labelEl.textContent = col;
+        }
+
+        var valueEl = document.createElement("div");
+        valueEl.className = "detail-value";
+        var val = row[col];
+        if (val == null || val === "") {
+          valueEl.textContent = "(空)";
+          valueEl.classList.add("empty");
+        } else if (typeof val === "number") {
+          valueEl.textContent = fmtNum(val);
+        } else {
+          valueEl.textContent = String(val);
+        }
+
+        detailRow.appendChild(labelEl);
+        detailRow.appendChild(valueEl);
+        dialog.appendChild(detailRow);
+      });
+
+      overlay.appendChild(dialog);
+      document.body.appendChild(overlay);
+      closeBtn.focus();
+    }
+
+    // --- テーブル生成（最初は20件表示） ---
+    var PAGE_SIZE = 20;
+    var showAll = false;
+    var tableDiv = document.createElement("div");
+    tableDiv.className = "mt-8";
+    container.appendChild(tableDiv);
+
+    var moreDiv = document.createElement("div");
+    container.appendChild(moreDiv);
+
+    function renderTable() {
+      var displayRecords = showAll ? records : records.slice(0, PAGE_SIZE);
+      buildTable(tableDiv, displayRecords, columns, {
+        rightAlign: numericCols,
+        fieldMeta: fm,
+        showRowNum: true,
+        formatters: (function() {
+          var fmts = {};
+          numericCols.forEach(function(col) { fmts[col] = fmtNum; });
+          return fmts;
+        })(),
+      });
+
+      // もっと見るボタン
+      moreDiv.innerHTML = "";
+      if (!showAll && records.length > PAGE_SIZE) {
+        var btn = document.createElement("button");
+        btn.className = "show-more-btn";
+        btn.textContent = "すべて表示（残り " + (records.length - PAGE_SIZE) + " 件）";
+        btn.addEventListener("click", function() {
+          showAll = true;
+          renderTable();
+        });
+        moreDiv.appendChild(btn);
+      }
+    }
+
+    renderTable();
+
+    // 免責事項
+    container.appendChild(createDisclaimer(data.provenance));
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>summarize_records</title>
+<style>
+/* INLINE_BASE_CSS */
+</style>
+</head>
+<body>
+<div id="app"><p class="text-muted">データを読み込み中…</p></div>
+<script>/* INLINE_ECHARTS_JS */</script>
+<script type="module">
+/* INLINE_BASE_JS */
+
+onData(function(data) {
+  var app = document.getElementById("app");
+  app.innerHTML = "";
+
+  if (data.error) {
+    showError(app, data.error);
+    return;
+  }
+
+  var groups = data.columns ? columnarToRecords(data) : (data.groups || []);
+
+  function reportSize() {
+    if (_app) setTimeout(function() { _app._reportSize(); }, 100);
+  }
+
+  createCollapsible(app, {
+    label: "集計",
+    toggleLabel: "チャートを表示",
+    info: [
+      { text: data.dataset_id || "" },
+      { text: "グループ: " + fmtNum(groups.length) + " / " + fmtNum(data.total_group_count) },
+    ],
+  }, buildContent);
+
+  function buildContent(container) {
+    /* クエリ条件表示 */
+    var qcEl = buildQueryConditions(data.query_params);
+    if (qcEl) container.appendChild(qcEl);
+
+    if (groups.length === 0) {
+      container.innerHTML += '<p class="text-muted mt-16">グループなし</p>';
+      return;
+    }
+
+    // メトリクスキー抽出（group_by フィールドと _null_excluded を除く）
+    var allKeys = Object.keys(groups[0]);
+    var groupByKeys = [];
+    var metricKeys = [];
+    allKeys.forEach(function(k) {
+      if (/:null_excluded$/.test(k)) return;
+      if (k === "count" || /^(sum|avg|min|max):/.test(k)) {
+        metricKeys.push(k);
+      } else {
+        groupByKeys.push(k);
+      }
+    });
+    if (metricKeys.length === 0) metricKeys = ["count"];
+
+    // 集計プレフィックス日本語マップ
+    var _OP_JA = { sum: "合計", avg: "平均", min: "最小", max: "最大" };
+    function opPrefix(mk) {
+      var m = mk.match(/^(sum|avg|min|max):/);
+      return m ? (_OP_JA[m[1]] || m[1]) + ": " : "";
+    }
+
+    var fm = data.field_metadata || {};
+
+    // ソート関連
+    var primaryMetric = metricKeys[0];
+    function toNumberOrZero(v) {
+      if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+      if (typeof v === "string") {
+        var n = Number(v);
+        return Number.isFinite(n) ? n : 0;
+      }
+      return 0;
+    }
+    function stackTotal(g) {
+      var s = 0;
+      metricKeys.forEach(function(mk) { s += toNumberOrZero(g[mk]); });
+      return s;
+    }
+    function groupLabel(g) {
+      return groupByKeys.map(function(k) { return g[k] != null ? String(g[k]) : ""; }).join(" / ");
+    }
+    groups.sort(function(a, b) { return stackTotal(b) - stackTotal(a); });
+
+    // メトリクスキー → 日本語ラベル変換
+    function metricLabel(mk) {
+      if (mk === "count") return "件数";
+      return opPrefix(mk) + mk;
+    }
+
+    var isHorizontal = groups.length > 6;
+
+    // 軸数モード判定
+    var is2Axis = groupByKeys.length === 2;
+    var isMultiAxis = groupByKeys.length >= 3;
+
+    // 軸ラベル生成
+    var categoryLabel = groupByKeys.join(" / ");
+    var valueLabel = metricKeys.map(function(k) {
+      return metricLabel(k);
+    }).join(" / ");
+
+    // チャートデータ再計算
+    var labels, datasets, pieValues, total;
+    function rebuildChartData() {
+      labels = groups.map(function(g) { return groupLabel(g); });
+      datasets = metricKeys.map(function(mk, i) {
+        return {
+          label: metricLabel(mk),
+          data: groups.map(function(g) { return g[mk] != null ? g[mk] : 0; }),
+          backgroundColor: getColor(i),
+        };
+      });
+      pieValues = groups.map(function(g) { return g[primaryMetric] || 0; });
+      total = 0;
+      pieValues.forEach(function(v) { total += v; });
+    }
+    rebuildChartData();
+
+    // 2軸ピボット
+    var pivotData = null;
+    if (is2Axis) {
+      pivotData = pivot2D(groups, groupByKeys, primaryMetric);
+      if (!pivotData) is2Axis = false; // 片軸のユニーク値1 → フラット表示
+    }
+
+    // 3軸以上ピボット
+    var ndPivotData = null;
+    if (isMultiAxis) {
+      ndPivotData = pivotND(groups, groupByKeys, primaryMetric);
+      if (!ndPivotData) isMultiAxis = false;
+    }
+
+    // --- タブ切替 UI ---
+    var chartArea = document.createElement("div");
+    chartArea.className = "mt-8";
+
+    var currentChartType = "pie";
+    var detailPanel = null;
+
+    function clearChart() {
+      chartArea.innerHTML = "";
+      if (detailPanel) { detailPanel = null; }
+    }
+
+    function showDetail(params) {
+      var idx = params.dataIndex;
+      var g = groups[idx];
+      if (!g) return;
+
+      /* 既存パネルを差し替え */
+      if (detailPanel) detailPanel.remove();
+
+      var panel = document.createElement("div");
+      panel.className = "detail-panel";
+
+      /* ヘッダー: カラーマーカー + グループ名 + 閉じるボタン */
+      var header = document.createElement("div");
+      header.className = "detail-header";
+      var title = document.createElement("div");
+      title.className = "detail-title";
+      var colorStr = params.color || getColor(idx);
+      var marker = document.createElement("span");
+      marker.className = "detail-color";
+      marker.style.background = colorStr;
+      title.appendChild(marker);
+      title.appendChild(document.createTextNode(params.name));
+      header.appendChild(title);
+      var closeBtn = document.createElement("button");
+      closeBtn.className = "detail-close";
+      closeBtn.textContent = "\u00d7";
+      closeBtn.title = "閉じる";
+      closeBtn.addEventListener("click", function(e) {
+        e.stopPropagation();
+        panel.remove();
+        detailPanel = null;
+        reportSize();
+      });
+      header.appendChild(closeBtn);
+      panel.appendChild(header);
+
+      /* メトリクス */
+      var metricsDiv = document.createElement("div");
+      metricsDiv.className = "detail-metrics";
+
+      metricKeys.forEach(function(mk) {
+        var val = g[mk];
+        var m = document.createElement("div");
+        m.className = "detail-metric";
+        m.innerHTML =
+          '<div class="label">' + escapeHtml(metricLabel(mk)) + '</div>' +
+          '<div class="value">' + (typeof val === "number" && !Number.isInteger(val) ? fmtFloat(val) : fmtNum(val)) + '</div>';
+        metricsDiv.appendChild(m);
+      });
+
+      /* 構成比 (primaryMetric ベース) */
+      var pv = toNumberOrZero(g[primaryMetric]);
+      if (total > 0) {
+        var pctMetric = document.createElement("div");
+        pctMetric.className = "detail-metric";
+        pctMetric.innerHTML =
+          '<div class="label">構成比</div>' +
+          '<div class="value">' + fmtPct(pv / total) + '</div>';
+        metricsDiv.appendChild(pctMetric);
+      }
+
+      panel.appendChild(metricsDiv);
+
+      /* --- ドリルダウンボタン --- */
+      var drillBtn = document.createElement("button");
+      drillBtn.className = "drilldown-btn";
+      drillBtn.innerHTML = '<span>&#8595;</span> 詳細レコードを表示';
+      var drillSection = null;
+      var drillLoaded = false;
+
+      drillBtn.addEventListener("click", function(e) {
+        e.stopPropagation();
+        if (drillLoaded && drillSection) {
+          /* トグル: 既にロード済みなら表示/非表示 */
+          var isHidden = drillSection.classList.toggle("hidden");
+          drillBtn.innerHTML = isHidden
+            ? '<span>&#8595;</span> 詳細レコードを表示'
+            : '<span>&#8593;</span> 詳細レコードを非表示';
+          reportSize();
+          return;
+        }
+        /* query_records 呼び出し */
+        if (typeof _app === "undefined" || !_app) return;
+        drillBtn.disabled = true;
+        drillBtn.innerHTML = '<span class="loading"></span> 読み込み中…';
+
+        /* where フィルタ構築: group_by の値でフィルタ */
+        var whereFilter = {};
+        groupByKeys.forEach(function(k) {
+          var v = g[k];
+          if (v != null) whereFilter[k] = [String(v)];
+        });
+
+        var toolParams = {
+          name: "query_records",
+          arguments: {
+            dataset_id: data.dataset_id,
+            where: JSON.stringify(whereFilter),
+            limit: 20,
+          },
+        };
+
+        /* タイムアウト付きで callServerTool */
+        var timedOut = false;
+        var timer = setTimeout(function() {
+          timedOut = true;
+          drillBtn.disabled = false;
+          drillBtn.innerHTML = '<span>&#8595;</span> 詳細レコードを表示';
+          showDrillError(panel, "ホストが tools/call に未対応のため、詳細レコードを取得できません。");
+          reportSize();
+        }, 5000);
+
+        _app.callServerTool(toolParams).then(function(result) {
+          clearTimeout(timer);
+          if (timedOut) return;
+          drillLoaded = true;
+          drillBtn.disabled = false;
+          drillBtn.innerHTML = '<span>&#8593;</span> 詳細レコードを非表示';
+
+          /* レスポンスからレコードを抽出 (columnar / records 両対応) */
+          function extractRecords(obj) {
+            if (!obj) return null;
+            if (obj.columns && obj.rows) {
+              return {
+                records: columnarToRecords(obj),
+                totalCount: obj.total != null ? obj.total : obj.total_count,
+                fm: obj.field_metadata,
+              };
+            }
+            if (obj.records) {
+              return {
+                records: obj.records,
+                totalCount: obj.total_count,
+                fm: obj.field_metadata,
+              };
+            }
+            return null;
+          }
+
+          var content = result && result.content;
+          var extracted = null;
+          if (Array.isArray(content)) {
+            for (var ci = 0; ci < content.length && !extracted; ci++) {
+              if (content[ci].type === "resource" && content[ci].resource && content[ci].resource.text) {
+                try { extracted = extractRecords(JSON.parse(content[ci].resource.text)); } catch (e) {}
+              } else if (content[ci].type === "text" && content[ci].text) {
+                try { extracted = extractRecords(JSON.parse(content[ci].text)); } catch (e) {}
+              }
+            }
+          }
+          if (!extracted && result && result.structuredContent) {
+            extracted = extractRecords(result.structuredContent);
+          }
+          if (!extracted) {
+            extracted = extractRecords(result);
+          }
+
+          var records = extracted ? extracted.records : null;
+          var totalCount = extracted ? extracted.totalCount : null;
+          var resFm = extracted ? extracted.fm : null;
+
+          if (!records || records.length === 0) {
+            showDrillError(panel, "該当するレコードがありません。");
+            reportSize();
+            return;
+          }
+
+          /* テーブル描画 */
+          drillSection = document.createElement("div");
+          drillSection.className = "drilldown-section";
+
+          var countInfo = document.createElement("div");
+          countInfo.className = "drilldown-count";
+          var shownCount = records.length;
+          countInfo.textContent = totalCount
+            ? shownCount + " / " + fmtNum(totalCount) + " 件を表示"
+            : shownCount + " 件を表示";
+          drillSection.appendChild(countInfo);
+
+          /* カラム: レコードのキーからフィールドメタデータ付き */
+          var drillFm = resFm || data.field_metadata || {};
+          var cols = Object.keys(records[0]).filter(function(k) {
+            return ["field_metadata", "provenance", "query_params", "notes"].indexOf(k) === -1;
+          });
+          var drillLabels = {};
+          var drillRight = new Set();
+          cols.forEach(function(c) {
+            var m = drillFm[c];
+            if (m) drillLabels[c] = c;
+            /* 数値カラムは右寄せ */
+            if (records[0][c] != null && typeof records[0][c] === "number") {
+              drillRight.add(c);
+            }
+          });
+          var drillFmts = {};
+          drillRight.forEach(function(c) {
+            drillFmts[c] = function(v) {
+              if (v == null) return "";
+              return typeof v === "number" && !Number.isInteger(v) ? fmtFloat(v) : fmtNum(v);
+            };
+          });
+
+          buildTable(drillSection, records, cols, {
+            labels: drillLabels,
+            formatters: drillFmts,
+            rightAlign: drillRight,
+            fieldMeta: drillFm,
+            showRowNum: true,
+          });
+
+          panel.appendChild(drillSection);
+          reportSize();
+        }).catch(function(err) {
+          clearTimeout(timer);
+          if (timedOut) return;
+          drillBtn.disabled = false;
+          drillBtn.innerHTML = '<span>&#8595;</span> 詳細レコードを表示';
+          showDrillError(panel, "レコードの取得に失敗しました: " + (err.message || err));
+          reportSize();
+        });
+      });
+      panel.appendChild(drillBtn);
+
+      chartArea.appendChild(panel);
+      detailPanel = panel;
+
+      reportSize();
+    }
+
+    function showDrillError(container, message) {
+      var existing = container.querySelector(".drilldown-error");
+      if (existing) existing.remove();
+      var el = document.createElement("div");
+      el.className = "drilldown-error";
+      el.style.cssText = "margin-top:8px;padding:8px 12px;font-size:1rem;color:var(--text-muted);background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius)";
+      el.textContent = message;
+      container.appendChild(el);
+    }
+
+    // --- 2軸用レンダー ---
+    function showDetail2D(params) {
+      var origIdx = pivotData.indexMap[params.catIndex][params.serIndex];
+      if (origIdx < 0) return;
+      showDetail({
+        dataIndex: origIdx,
+        name: groupLabel(groups[origIdx]),
+        color: params.color,
+      });
+    }
+
+    var pivotCatLabel = is2Axis ? pivotData.catKey : "";
+    var pivotSerLabel = is2Axis ? pivotData.serKey : "";
+
+    function renderStackedBar2D() {
+      clearChart();
+      createStackedBar2D(chartArea, pivotData, {
+        catAxisName: pivotCatLabel,
+        valueLabel: valueLabel,
+        onCellClick: showDetail2D,
+      });
+    }
+
+    function renderHeatmap() {
+      clearChart();
+      createHeatmap(chartArea, pivotData, {
+        catAxisName: pivotCatLabel,
+        serAxisName: pivotSerLabel,
+        metricLabel: valueLabel,
+        onCellClick: showDetail2D,
+      });
+    }
+
+    function renderPie() {
+      clearChart();
+      createPieChart(chartArea, labels, pieValues, {
+        onSliceClick: showDetail,
+      });
+    }
+
+    function renderBar() {
+      clearChart();
+      createBarChart(chartArea, labels, datasets, {
+        horizontal: isHorizontal,
+        stacked: metricKeys.length <= 1,
+        xAxisName: isHorizontal ? valueLabel : categoryLabel,
+        yAxisName: isHorizontal ? categoryLabel : valueLabel,
+        onBarClick: showDetail,
+      });
+    }
+
+    function renderTreemap() {
+      clearChart();
+      if (is2Axis) {
+        createTreemap(chartArea, labels, pieValues, {
+          pivot: pivotData,
+          metricLabel: valueLabel,
+          onNodeClick: function(params) {
+            if (params.catIndex != null && params.serIndex != null) {
+              showDetail2D(params);
+            }
+          },
+        });
+      } else {
+        createTreemap(chartArea, labels, pieValues, {
+          metricLabel: valueLabel,
+          onNodeClick: function(params) {
+            showDetail({ dataIndex: params.dataIndex, name: params.name, color: params.color });
+          },
+        });
+      }
+    }
+
+    function renderGraph() {
+      clearChart();
+      createGraph(chartArea, pivotData, {
+        catLabel: pivotCatLabel,
+        serLabel: pivotSerLabel,
+        metricLabel: valueLabel,
+        onEdgeClick: showDetail2D,
+      });
+    }
+
+    // --- 3軸以上用レンダー ---
+    function showDetailND(params) {
+      var idx = params.groupIndex;
+      if (idx == null || idx < 0 || !groups[idx]) return;
+      showDetail({
+        dataIndex: idx,
+        name: groupLabel(groups[idx]),
+        color: params.color,
+      });
+    }
+
+    function renderTreemapND() {
+      clearChart();
+      createTreemap(chartArea, labels, pieValues, {
+        pivotND: ndPivotData,
+        metricLabel: valueLabel,
+        onNodeClick: function(params) {
+          if (params.groupIndex != null) {
+            showDetailND(params);
+          }
+        },
+      });
+    }
+
+    function renderSankey() {
+      clearChart();
+      createSankey(chartArea, ndPivotData, {
+        metricLabel: valueLabel,
+      });
+    }
+
+    function renderTable() {
+      clearChart();
+
+      var cols = groupByKeys.concat(metricKeys);
+      var tblLabels = {};
+      groupByKeys.forEach(function(k) {
+        if (fm[k]) tblLabels[k] = k;
+      });
+      metricKeys.forEach(function(mk) {
+        tblLabels[mk] = metricLabel(mk);
+      });
+
+      var rightAlign = new Set();
+      metricKeys.forEach(function(mk) { rightAlign.add(mk); });
+
+      var formatters = {};
+      metricKeys.forEach(function(mk) {
+        formatters[mk] = function(v) {
+          if (v == null) return "";
+          return typeof v === "number" && !Number.isInteger(v) ? fmtFloat(v) : fmtNum(v);
+        };
+      });
+
+      buildTable(chartArea, groups, cols, {
+        labels: tblLabels,
+        formatters: formatters,
+        rightAlign: rightAlign,
+        fieldMeta: fm,
+        onRowClick: function(row, idx) {
+          showDetail({ dataIndex: idx, name: groupLabel(row), color: getColor(idx) });
+        },
+      });
+    }
+
+    function renderCurrent() {
+      if (currentChartType === "stacked2d") renderStackedBar2D();
+      else if (currentChartType === "heatmap") renderHeatmap();
+      else if (currentChartType === "treemap") renderTreemap();
+      else if (currentChartType === "treemapND") renderTreemapND();
+      else if (currentChartType === "sankey") renderSankey();
+      else if (currentChartType === "graph") renderGraph();
+      else if (currentChartType === "pie") renderPie();
+      else if (currentChartType === "table") renderTable();
+      else renderBar();
+    }
+
+    // タブ: 3軸以上はツリーマップ・サンキー・テーブル、2軸は積上げ棒・ヒートマップ・ツリーマップ・グラフ・テーブル、1軸は円・棒・ツリーマップ・テーブル
+    var toggleOptions, defaultChart;
+    if (isMultiAxis) {
+      toggleOptions = [
+        { label: "ツリーマップ", value: "treemapND" },
+        { label: "サンキー", value: "sankey" },
+        { label: "テーブル", value: "table" },
+      ];
+      defaultChart = "treemapND";
+    } else if (is2Axis) {
+      toggleOptions = [
+        { label: "積上げ棒グラフ", value: "stacked2d" },
+        { label: "ヒートマップ", value: "heatmap" },
+        { label: "ツリーマップ", value: "treemap" },
+        { label: "ネットワーク", value: "graph" },
+        { label: "テーブル", value: "table" },
+      ];
+      defaultChart = "stacked2d";
+    } else {
+      toggleOptions = [
+        { label: "円グラフ", value: "pie" },
+        { label: "棒グラフ", value: "bar" },
+        { label: "ツリーマップ", value: "treemap" },
+        { label: "テーブル", value: "table" },
+      ];
+      defaultChart = "pie";
+    }
+    currentChartType = defaultChart;
+
+    var chartToggle = createToggle(toggleOptions, function(val) {
+      currentChartType = val;
+      renderCurrent();
+    });
+    container.appendChild(chartToggle);
+
+    container.appendChild(chartArea);
+
+    // デフォルト描画
+    renderCurrent();
+
+    // 免責事項
+    container.appendChild(createDisclaimer(data.provenance));
+  }
+});
+</script>
+</body>
+</html>

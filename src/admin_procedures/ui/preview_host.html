@@ -1,0 +1,3871 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>apcli</title>
+<style>
+/* base.css (DADS デザイントークン + セマンティックトークン + コンポーネント) を
+ * サーバーがここへインライン注入する。以下のスタイルはそのトークンのみを参照する。
+ * 公式トークンのみを使用し、ロゴ等のブランド要素は用いない。 */
+/* INLINE_BASE_CSS */
+
+/* --- プレビューホスト固有のレイアウト (base.css のトークンを使用) --- */
+/* 白基調で表示する (OS がダークモードでもライト固定)。
+ * DADS ライトのセマンティックトークンを無条件で再宣言して dark メディアより優先させる。 */
+:root {
+  --bg: #ffffff; --bg-alt: #f2f2f2;
+  --text: #1a1a1a; --text-muted: #767676;
+  --border: #cccccc; --border-strong: #666666;
+  --accent: #0017c1; --accent-light: #e8f1fe;
+  --green: #259d63; --green-bg: #e6f5ec;
+  --yellow: #b78f00; --yellow-bg: #fbf5e0;
+  --red: #ec0000; --red-bg: #fdeeee;
+  color-scheme: light;
+}
+/* base.css の 14px はダッシュボード (iframe 内) の高密度表示向け。
+ * このページは会話 UI なので DADS の Std-17N-170 相当 (17px / 行間 170%) で
+ * ゆったり表示する。補足テキストの下限は 14px を厳守。 */
+html { font-size: 17px; }
+html, body { height: 100%; }
+body {
+  display: flex;
+  flex-direction: column;
+  padding: 0;  /* base.css の本文パディングはチャットレイアウトでは用いない */
+  line-height: 1.7;
+}
+/* DADS フォーカスインジケーター: 黒 4px アウトライン + 黄 (yellow-300) 2px リング
+ * (公式実装 design-system-example-components の仕様どおり) */
+:focus-visible,
+#input:focus {
+  outline: 4px solid #000000;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px #ffd43d;
+}
+
+/* --- サイドバー付きレイアウト (Claude/ChatGPT ライク) --- */
+#layout { flex: 1; display: flex; min-height: 0; }
+#sidebar {
+  width: 250px; flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  padding: 16px 12px;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 10px;
+  background: var(--bg);
+}
+#new-session {
+  width: 100%; min-height: 48px; font-size: 0.9375rem;
+  background: var(--bg); border: 1px solid var(--border-strong);
+  border-radius: var(--radius); cursor: pointer;
+}
+#new-session:hover { background: var(--accent-light); }
+#session-list { display: flex; flex-direction: column; gap: 2px; }
+.session-item {
+  display: flex; align-items: center; border-radius: var(--radius);
+}
+.session-item:hover { background: var(--bg-alt); }
+.session-item.active { background: var(--accent-light); }
+.session-item .session-open {
+  flex: 1; min-width: 0; text-align: left;
+  border: none; background: none; cursor: pointer;
+  min-height: 44px; padding: 8px 10px; font-size: 0.875rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.session-item .session-del {
+  border: none; background: none; cursor: pointer;
+  min-height: 44px; min-width: 40px; padding: 0 8px;
+  color: var(--text-muted); font-size: 0.875rem;
+}
+.session-item .session-del:hover { color: var(--red); }
+/* 狭い画面ではサイドバーをオーバーレイ (引き出し) として表示する。
+ * display:none で固定してしまうとハンバーガーが無反応に見える。 */
+#sidebar-backdrop { display: none; }
+#close-sidebar { display: none; }
+@media (max-width: 900px) {
+  #sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 40;
+    width: min(280px, 85vw);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+  }
+  body:not(.sidebar-closed) #sidebar-backdrop {
+    display: block; position: fixed; inset: 0; z-index: 39;
+    background: rgba(0, 0, 0, 0.4); border: none; padding: 0; cursor: pointer;
+  }
+  #close-sidebar {
+    display: flex; align-items: center; justify-content: center;
+    align-self: flex-end; min-width: 44px; min-height: 44px;
+    border: none; background: none; cursor: pointer;
+    color: var(--text-muted); border-radius: var(--radius);
+  }
+  #close-sidebar:hover { background: var(--bg-alt); }
+}
+body.sidebar-closed #sidebar { display: none; }
+#main-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 700;
+  font-size: 0.875rem;
+}
+#chat-close {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 0;
+  min-width: 24px;
+  min-height: 24px;
+}
+
+#update-banner {
+  display: flex; align-items: center; gap: 16px;
+  padding: 8px 24px;
+  background: var(--yellow-bg);
+  border-bottom: 1px solid var(--yellow);
+  font-size: 0.875rem;
+}
+#update-banner button { min-height: 36px; padding: 2px 16px; font-size: 0.875rem; }
+#toggle-sidebar {
+  border: none; background: none; cursor: pointer;
+  min-width: 44px; min-height: 44px; font-size: 1.125rem;
+  color: var(--text-muted); border-radius: var(--radius);
+}
+#toggle-sidebar:hover { background: var(--bg-alt); }
+.sidebar-spacer { flex: 1; }
+/* 探索フローの折りたたみ */
+details.discovery { align-self: flex-start; width: 100%; }
+details.discovery > summary {
+  cursor: pointer; color: var(--text-muted); font-size: 0.875rem;
+  min-height: 44px; display: flex; align-items: center; padding: 0 4px;
+}
+details.discovery .tool-card { margin: 8px 0; }
+header {
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+header h1 { font-size: 1rem; margin: 0; font-weight: 700; }
+header .sub { color: var(--text-muted); font-size: 0.875rem; }
+/* ステータスランプ: 緑=利用可 / 黄=ダウンロード関連 / 赤=利用不可 / グレー=確認中。
+ * 詳細は title / aria-label に持たせ、表示はドットのみ (シンプルファースト) */
+#lm-status {
+  margin-left: auto;
+  display: flex; align-items: center;
+  color: var(--border-strong);
+  position: relative;
+  flex-shrink: 0;
+}
+#lm-status.ok { color: var(--green); }
+#lm-status.warn { color: #ffd43d; }  /* yellow-300 */
+#lm-status.err { color: var(--red); }
+/* マウスオーバーで状態の詳細を表示 */
+#lm-status:hover::after {
+  content: attr(data-tip);
+  position: absolute; right: 0; top: calc(100% + 8px);
+  background: var(--text); color: var(--bg);
+  padding: 6px 12px; border-radius: 6px;
+  font-size: 0.875rem; white-space: nowrap; z-index: 20;
+}
+
+/* ── チャットレイアウト (一般的なチャット UI の文法に従う) ──
+ * ユーザー = 右寄せの吹き出し (accent)、AI = 左寄せの吹き出し (bg-alt)、
+ * メタ情報 (ヒント・差し戻し等) は左寄せの小さな注記。 */
+#chat {
+  flex: 1;
+  overflow-y: auto;
+  padding: 48px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: 840px;
+  margin: 0 auto;
+}
+#chat > * { width: 100%; }
+.msg { padding: 14px 22px; white-space: pre-wrap; word-break: break-word; line-height: 1.8; }
+.msg.user {
+  background: var(--accent);
+  color: var(--bg);
+  border-radius: 14px 14px 4px 14px;
+  width: fit-content;
+  max-width: 80%;
+  align-self: flex-end;
+}
+.msg.assistant {
+  background: var(--bg-alt);
+  border-radius: 14px 14px 14px 4px;
+  width: fit-content;
+  max-width: 90%;
+  align-self: flex-start;
+}
+.msg.note {
+  background: none; color: var(--text-muted);
+  font-size: 0.875rem; text-align: left; padding: 0 4px;
+  align-self: flex-start; max-width: 90%;
+}
+.msg.error {
+  background: var(--red-bg); border: 1px solid var(--red); color: var(--red);
+  font-size: 0.875rem; border-radius: 14px;
+  width: fit-content; max-width: 90%; align-self: flex-start;
+}
+/* 進行ステップ: パンくず1行 (a › b › c)。クリックで下に詳細展開 */
+.turn-steps { align-self: flex-start; max-width: 100%; font-size: 0.875rem; color: var(--text-muted); }
+.steps-line { display: flex; flex-wrap: wrap; align-items: center; min-height: 32px; padding: 0 4px; }
+.steps-line .sep { margin: 0 8px; color: var(--border); }
+.steps-line .seg.running::after {
+  content: "…";
+  animation: thinking-dots 1.2s infinite;
+}
+.steps-line .seg.has-detail { cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.steps-line .seg.has-detail:hover { color: var(--accent); }
+.steps-line .seg.active { color: var(--accent); font-weight: 700; }
+.step-detail {
+  margin: 4px 0 8px 4px; padding: 8px 12px;
+  max-height: 240px; overflow: auto;
+  font-family: var(--font-family-mono); font-size: 0.875rem;
+  background: var(--bg-alt); border-radius: 8px;
+  white-space: pre-wrap; word-break: break-all;
+}
+@keyframes thinking-dots {
+  0% { opacity: 0.2; }
+  50% { opacity: 1; }
+  100% { opacity: 0.2; }
+}
+/* ターン境界線は eval 実行中のみ表示 (ケースの区切りを明示するため) */
+.turn-sep { display: none; }
+body.eval-running .turn-sep {
+  display: block;
+  border-top: 2px solid var(--border-strong);
+  margin-top: 16px;
+  opacity: 0.6;
+}
+body.eval-running .turn-sep:first-child { display: none; }
+
+/* ツール実行は枠なし: 「name — クエリ内容」の小さな1行 + UI (細枠) + 詳細 */
+.tool-card { border: none; }
+.tool-card .tc-head {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 0 4px;
+  font-size: 0.875rem; color: var(--text-muted);
+  flex-wrap: wrap;
+}
+.tool-card .tc-name { font-family: var(--font-family-mono); font-weight: 700; }
+.tool-card .tc-query { word-break: break-word; }
+.tool-card .tc-query::before { content: "—"; margin-right: 8px; color: var(--border); }
+.tool-card .tc-state { margin-left: auto; white-space: nowrap; }
+.tool-card .tc-args {
+  margin: 0; padding: 8px 12px;
+  font-family: var(--font-family-mono); font-size: 0.875rem;
+  white-space: pre-wrap; word-break: break-all;
+  background: var(--bg-alt); border-radius: 8px;
+  max-height: 160px; overflow: auto;
+}
+.tool-card .tc-fix {
+  padding: 4px 12px; font-size: 0.875rem; color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tool-card iframe {
+  display: block; width: 100%; height: 340px;
+  background: var(--bg);
+  border: 1px solid var(--border); border-radius: 8px;
+  margin-top: 6px;
+}
+.tool-card details { font-size: 0.875rem; }
+.tool-card details summary {
+  padding: 4px; cursor: pointer; color: var(--text-muted);
+  display: inline-block;
+}
+.tool-card pre {
+  margin: 4px 0; padding: 8px 12px; max-height: 240px; overflow: auto;
+  font-family: var(--font-family-mono); font-size: 0.875rem;
+  background: var(--bg-alt); border-radius: 8px;
+  white-space: pre-wrap; word-break: break-all;
+}
+
+#bottom { border-top: 1px solid var(--border); padding: 16px 32px 24px; }
+#bottom > * { max-width: 840px; margin: 0 auto; }
+#composer { display: flex; gap: 8px; }
+/* DADS インプットテキスト/ボタン準拠: 入力・主要ボタンは高さ 48px (Medium)、
+ * ターゲット領域 44px 以上を確保。本文 16px。 */
+/* DADS インプットテキスト準拠: 高さ lg=56px、ボーダー solid-gray-600、
+ * hover で黒、角丸 8px */
+#input {
+  flex: 1; resize: none; padding: 12px 16px;
+  border: 1px solid var(--border-strong); border-radius: 8px;
+  background: #ffffff; color: var(--text);
+  font-family: inherit; font-size: 1rem;
+  min-height: 56px; max-height: 160px;
+}
+#input:hover:not(:disabled) { border-color: #000000; }
+#input:disabled {
+  background: var(--bg-alt);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+/* DADS ボタン準拠 (md: 高さ48px / 角丸8px)。
+ * 既定はアウトライン (白地 + key-900)、.primary は塗り (key-900 → hover 1000 → active 1200) */
+button {
+  border: 1px solid currentColor; border-radius: 8px;
+  background: #ffffff; color: var(--accent);
+  min-height: 48px; padding: 8px 16px;
+  font-size: 1rem; font-family: inherit; cursor: pointer;
+}
+button:hover { background: #c5d7fb; color: #00118f; }   /* key-200 / key-1000 */
+button:active { background: #9db7f9; color: #000060; }  /* key-300 / key-1200 */
+button:disabled {
+  background: #ffffff; color: #cccccc; border-color: #cccccc;
+  cursor: not-allowed;
+}
+button.primary {
+  background: var(--accent); border-color: var(--accent);
+  color: #ffffff; font-weight: 700; padding: 8px 24px;
+}
+button.primary:hover { background: #00118f; border-color: #00118f; color: #ffffff; }
+button.primary:active { background: #000060; border-color: #000060; }
+button.primary:disabled { background: #cccccc; border-color: #cccccc; color: #f2f2f2; }
+#examples { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+#examples button {
+  font-size: 0.875rem; min-height: 36px; padding: 2px 12px;
+  border-radius: 6px; margin: 4px 0;  /* sm サイズ + ターゲット領域確保の余白 */
+}
+
+/* スマートフォン対応 */
+@media (max-width: 768px) {
+  #main-col { padding: 0; }
+  #sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 40;
+    width: min(280px, 85vw);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+  }
+  body:not(.sidebar-closed) #sidebar-backdrop {
+    display: block; position: fixed; inset: 0; z-index: 39;
+    background: rgba(0, 0, 0, 0.4); border: none; padding: 0; cursor: pointer;
+  }
+  #close-sidebar {
+    display: flex; align-items: center; justify-content: center;
+    align-self: flex-end; min-width: 44px; min-height: 44px;
+    border: none; background: none; cursor: pointer;
+    color: var(--text-muted); border-radius: var(--radius);
+  }
+  #close-sidebar:hover { background: var(--bg-alt); }
+  body.sidebar-closed #sidebar { display: none; }
+  #chat {
+    padding: 24px 16px;
+    gap: 12px;
+    max-width: 100%;
+  }
+  #bottom { padding: 12px 16px 16px; }
+  #composer { flex-direction: column; }
+  #input { min-height: 48px; }
+}
+
+/* フォローアップ提案 (回答の下に「次の一手」チップを出す) */
+.followups {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  margin: 4px 0 20px;
+}
+.followups .fu-label { font-size: 0.875rem; color: var(--text-muted); }
+.followups button {
+  font-size: 0.875rem; min-height: 36px; padding: 2px 12px;
+  border-radius: 6px; margin: 4px 0;
+}
+
+#dl-banner {
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-light);
+  padding: 12px 20px;
+  font-size: 1rem;
+}
+#dl-banner .dl-inner { max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+#dl-banner .dl-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+#dl-banner progress { flex: 1; min-width: 200px; height: 8px; accent-color: var(--accent); }
+#dl-banner .dl-note { color: var(--text-muted); font-size: 0.875rem; }
+
+#setup {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px 20px; font-size: 1rem; background: var(--bg-alt);
+}
+#setup h2 { font-size: 1rem; margin: 0 0 6px; }
+#setup ol { margin: 6px 0; padding-left: 20px; }
+#setup code { font-family: var(--font-family-mono); font-size: 0.875rem; background: var(--bg); padding: 1px 6px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <button type="button" id="toggle-sidebar" aria-label="サイドバーを開閉"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  <h1>apcli</h1>
+  <span id="lm-status">内蔵 AI を確認中…</span>
+</header>
+
+<div id="dl-banner" hidden>
+  <div class="dl-inner">
+    <div id="dl-text"></div>
+    <div class="dl-row">
+      <button type="button" id="dl-btn" class="primary">モデルをダウンロード</button>
+      <progress id="dl-progress" max="1" hidden></progress>
+      <span id="dl-label"></span>
+    </div>
+    <div class="dl-note">
+      Gemini Nano (数 GB) をこの端末に保存します。空きストレージ 22GB 以上・非従量制ネットワークを推奨。
+      ダウンロード後の実行は完全にローカルで、質問文が外部に送信されることはありません。
+      空き容量が 10GB を下回るとモデルは自動削除され、再ダウンロードが必要になります。
+    </div>
+  </div>
+</div>
+
+<div id="layout">
+<button type="button" id="sidebar-backdrop" aria-label="サイドバーを閉じる" tabindex="-1"></button>
+<aside id="sidebar">
+  <button type="button" id="close-sidebar" aria-label="サイドバーを閉じる"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  <button type="button" id="new-session">＋ 新規セッション</button>
+  <div id="session-list"></div>
+  <div class="sidebar-spacer"></div>
+</aside>
+<div id="main-col">
+
+<div id="chat" style="flex: 1; overflow-y: auto; padding: 48px 32px; display: flex; flex-direction: column; gap: 24px; width: 100%; max-width: 840px; margin: 0 auto;"></div>
+
+<div id="examples" style="padding: 0 32px; width: 100%; max-width: 840px; margin: 0 auto;"></div>
+
+<div id="followups-container" style="padding: 0 32px; width: 100%; max-width: 840px; margin: 0 auto;"></div>
+
+<div id="bottom">
+  <form id="composer">
+    <textarea id="input" placeholder="データについて質問してください" rows="1"></textarea>
+    <button type="submit" id="send" class="primary" disabled>送信</button>
+  </form>
+</div>
+
+</div><!-- /main-col -->
+</div><!-- /layout -->
+
+
+<script>
+"use strict";
+
+/* ================= 定数・状態 ================= */
+
+var TOOL_TEMPLATES = {
+  list_datasets: "list_datasets",
+  inspect_dataset: "inspect_dataset",
+  query_records: "query_records",
+  summarize_records: "summarize_records",
+};
+var MAX_STEPS = 5;
+
+/* arguments はキーと型を明示して constrained decoding の精度を上げる */
+var ARGS_SCHEMA = {
+  type: "object",
+  properties: {
+    dataset_id: { type: "string" },
+    q: { type: "string" },
+    search_fields: { type: "array", items: { type: "string" } },
+    select: { type: "array", items: { type: "string" } },
+    where: { type: "object" },
+    order_by: { type: "string" },
+    limit: { type: "integer" },
+    cursor: { type: "string" },
+    metrics: { type: "array", items: { type: "string" } },
+    group_by: { type: "array", items: { type: "string" } },
+    having: { type: "object" },
+    explode: { type: "string" },
+    publisher: { type: "string" },
+  },
+  /* 開いたままだとキー名の途中から不正トークンに脱線する
+   * ("metricsстройки" 等が実測で発生) ため必ず閉じる */
+  additionalProperties: false,
+};
+
+/* エージェントループ用の行動スキーマ。
+ * 詳細な引数制約は二段階フローの引数生成側 (narrowedArgsSchema) が担うため、
+ * ループの制約は軽量に保つ — 重い制約は実機で生成ストール (90s タイムアウト) を
+ * 引き起こすことが実測されている。 */
+var ACTION_SCHEMA_SIMPLE = {
+  type: "object",
+  properties: {
+    action: { type: "string", enum: ["tool_call", "answer"] },
+    tool: { type: "string", enum: Object.keys(TOOL_TEMPLATES) },
+    arguments: { type: "object" },
+    answer: { type: "string" },
+  },
+  required: ["action"],
+};
+
+/* SLM が生成した引数のサニタイズ:
+ * - 呼び出すツールのパラメータに無いキーを除去 (/api/describe から導出。
+ *   summarize に publisher が混入する等が実測で発生)
+ * - スキーマ外キー (constrained decoding の脱線) と空値を除去。
+ *   空値 ("", [], {}) はモデルが全キーを埋めようとした痕跡で、
+ *   サーバーに渡すと未指定と意味が変わりうる (cursor:"" 等)。 */
+var TOOL_PARAMS = {};  // tool name → { param name: true } (init で構築)
+
+/* where 条件で有効な演算子 (これ以外のキーは計画テキスト等の混入とみなして除去) */
+var WHERE_OPS = { "$gte": 1, "$lte": 1, "$ne": 1, "$eq": 1, "$not_contains": 1, "$not_empty": 1 };
+
+/* 正規化名 (「の」・空白除去) → 正式フィールド名。
+ * "オンライン化の実施時期" → "オンライン化実施時期" のような揺れを補正する。 */
+function _fieldIndex() {
+  var idx = {};
+  catalogInfo.forEach(function(c) {
+    (c.allFields || []).forEach(function(f) {
+      idx[f.replace(/[の\s]/g, "")] = f;
+    });
+  });
+  return idx;
+}
+
+function normalizeField(name, idx) {
+  if (typeof name !== "string" || name === "") return null;
+  var norm = name.replace(/[の\s]/g, "");
+  if (idx[norm]) return idx[norm];
+  /* 部分一致が一意ならその正式名に補正
+   * ("本人確認手法" → "申請等における本人確認手法" が実測で発生)。
+   * 複数候補に当たる場合は曖昧なので補正しない。 */
+  var hits = [];
+  Object.keys(idx).forEach(function(k) {
+    if (k.indexOf(norm) >= 0 || norm.indexOf(k) >= 0) hits.push(idx[k]);
+  });
+  if (hits.length === 1) return hits[0];
+  return name;  // 未知名はそのまま (サーバーのエラーで学ばせる)
+}
+
+function cleanArguments(tool, args) {
+  var allowed = TOOL_PARAMS[tool] || ARGS_SCHEMA.properties;
+  var idx = _fieldIndex();
+  var out = {};
+  Object.keys(args || {}).forEach(function(k) {
+    if (!allowed[k] || !ARGS_SCHEMA.properties[k]) return;
+    var v = args[k];
+    if (v == null || v === "") return;
+    if (Array.isArray(v) && v.length === 0) return;
+    if (typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 0) return;
+    out[k] = v;
+  });
+
+  /* フィールド名の揺れを正式名に正規化 */
+  ["group_by", "select", "search_fields"].forEach(function(k) {
+    if (Array.isArray(out[k])) {
+      out[k] = out[k].map(function(f) { return normalizeField(f, idx); }).filter(Boolean);
+      if (out[k].length === 0) delete out[k];
+    }
+  });
+  /* group_by は groupable フィールドのみ (数値フィールドの混入が実測で発生) */
+  var gset = {}, aset = {};
+  catalogInfo.forEach(function(c) {
+    (c.groupable || []).forEach(function(f) { gset[f] = 1; });
+    (c.aggregatable || []).forEach(function(f) { aset[f] = 1; });
+  });
+  if (Array.isArray(out.group_by) && Object.keys(gset).length > 0) {
+    out.group_by = out.group_by.filter(function(f) { return gset[f]; });
+    if (out.group_by.length === 0) delete out.group_by;
+  }
+  if (typeof out.explode === "string") {
+    var ex = normalizeField(out.explode, idx);
+    /* explode はフィールド名のみ有効 ("true" 等の誤指定が実測で発生) */
+    if (ex && idx[ex.replace(/[の\s]/g, "")]) out.explode = ex;
+    else delete out.explode;
+  }
+  if (typeof out.order_by === "string") {
+    var desc = out.order_by.charAt(0) === "-";
+    var ob = normalizeField(desc ? out.order_by.slice(1) : out.order_by, idx);
+    out.order_by = (desc ? "-" : "") + ob;
+  }
+  /* metrics は count / sum: / avg: / min: / max: のみ (フィールド名単体の混入が実測で発生) */
+  if (Array.isArray(out.metrics)) {
+    out.metrics = out.metrics.filter(function(m) {
+      return typeof m === "string" && /^(count$|sum:|avg:|min:|max:)/.test(m);
+    });
+    if (out.metrics.length === 0) delete out.metrics;
+  }
+  /* where: キー正規化 + 演算子検証。$in は配列 (IN) に変換、未知キーは除去 */
+  if (out.where && typeof out.where === "object" && !Array.isArray(out.where)) {
+    var w = {};
+    Object.keys(out.where).forEach(function(f) {
+      var cond = out.where[f];
+      var nf = normalizeField(f, idx);
+      if (!nf) return;
+      if (cond && typeof cond === "object" && !Array.isArray(cond)) {
+        if (Array.isArray(cond.$in)) { w[nf] = cond.$in; return; }
+        var ops = {};
+        Object.keys(cond).forEach(function(op) {
+          if (!WHERE_OPS[op]) return;
+          /* 数値比較はaggregatable(数値)フィールドのみ有効。コード値フィールドへの
+           * {"$lte": 2} のような比較 (実測で発生) は0件になるだけなので除去する */
+          if ((op === "$gte" || op === "$lte") && typeof cond[op] === "number" &&
+              Object.keys(aset).length > 0 && !aset[nf]) {
+            return;
+          }
+          ops[op] = cond[op];
+        });
+        if (Object.keys(ops).length > 0) w[nf] = ops;
+        return;
+      }
+      /* 空文字・空配列の条件は 0 件になるだけなので除去 (実測で発生) */
+      if (cond === "" || cond == null ||
+          (Array.isArray(cond) && cond.length === 0)) return;
+      w[nf] = cond;
+    });
+    if (Object.keys(w).length > 0) out.where = w; else delete out.where;
+  }
+  /* dataset_id 必須のツールで欠落していたら補完する。多データセット時は
+   * 質問との関連順 (catalogInfo[0]) を優先。
+   * 「dataset_id が指定されていません」エラーが回答として露出した実測対策。 */
+  if (allowed.dataset_id && !out.dataset_id && datasetIds.length > 0) {
+    out.dataset_id = (catalogInfo[0] && catalogInfo[0].dataset_id) || datasetIds[0];
+  }
+  /* having は集計値 (count / sum:* 等) の絞り込み専用。キーは集計値のみ、
+   * 値は演算子オブジェクトのみ許可 (">0" のような文字列は実測で発生 → 除去) */
+  if (out.having && typeof out.having === "object") {
+    var h = {};
+    Object.keys(out.having).forEach(function(k) {
+      if (!/^(count$|sum:|avg:|min:|max:)/.test(k)) return;
+      var cond = out.having[k];
+      if (cond && typeof cond === "object" && !Array.isArray(cond)) {
+        var hops = {};
+        Object.keys(cond).forEach(function(op) {
+          if (WHERE_OPS[op]) hops[op] = cond[op];
+        });
+        if (Object.keys(hops).length > 0) h[k] = hops;
+      }
+    });
+    if (Object.keys(h).length > 0) out.having = h; else delete out.having;
+  }
+  return out;
+}
+
+/* ハーネス側の品質注記: 使ったフィールドの記入率が低ければ回答末尾に必ず付ける。
+ * SLM 任せにせず、カタログの品質情報から段取り側で保証する。 */
+function appendQualityNotes(text, calls) {
+  var notes = [];
+  var seen = {};
+  calls.forEach(function(c) {
+    if (c.ok === false) return;  // 失敗した呼び出しのフィールドに注記は付けない
+    var a = c.args || {};
+    var fields = (a.group_by || []).slice();
+    if (a.explode) fields.push(a.explode);
+    if (a.where) fields = fields.concat(Object.keys(a.where));
+    (a.metrics || []).forEach(function(m) {
+      var p = String(m).split(":");
+      if (p.length === 2) fields.push(p[1]);
+    });
+    fields.forEach(function(f) {
+      if (seen[f]) return;
+      catalogInfo.forEach(function(cat) {
+        var fr = cat.fillRates && cat.fillRates[f];
+        if (typeof fr === "number" && fr < 0.9 && !seen[f]) {
+          seen[f] = true;
+          notes.push("※ 「" + f + "」の記入率は " + Math.round(fr * 100) +
+            "% です。未記入分は集計に含まれない点に注意してください。");
+        }
+      });
+    });
+  });
+  if (notes.length === 0) return text;
+  return text.replace(/\s*$/, "") + "\n" + notes.join("\n");
+}
+
+/* SVG ラインアイコン (currentColor / DADS の簡素なトーン) */
+var ICONS = {
+  search: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
+  close: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+};
+
+var chatEl = document.getElementById("chat");
+var inputEl = document.getElementById("input");
+var sendBtn = document.getElementById("send");
+var statusEl = document.getElementById("lm-status");
+
+var describeData = null;
+var datasetIds = [];
+var catalogInfo = [];  // ハーネスが prefetch した各データセットの構造・品質情報
+var datasetList = [];  // list_datasets の全件 (id/title/record_count)。多データセット時の順位付けに使う
+/* データセットがこの数以下なら起動時に全件 inspect する。超える場合は
+ * SLM のコンテキストに収まらないため、質問に応じた遅延 inspect に切り替える */
+var INSPECT_ALL_MAX = 3;
+/* 単軸集計で実測したグループ数 (field → total_group_count)。
+ * inspect では distinct 数が分からないため、観測値でクロス軸の適性を判断する */
+var observedGroupCounts = {};
+var systemPrompt = "";
+
+var LM = null;            // LanguageModel 名前空間
+var lmReady = false;
+
+/* ================= Prompt API ラッパー: PreviewSession ================= */
+/**
+ * Prompt API native session をラップし、streaming + エラーハンドリングを統一
+ */
+function PreviewSession() {
+  this.id = "session-" + Date.now();
+  this.apiSession = null;  // LanguageModel.Session
+  this.history = [];       // {role, content} の記録（表示用）
+  this.abortController = null;
+}
+
+PreviewSession.prototype.init = function() {
+  if (!LM || typeof LM.createSession !== "function") {
+    // Prompt API 非対応環境：プレースホルダー session を作成
+    this.apiSession = { placeholder: true };
+    return Promise.resolve(this);
+  }
+  var self = this;
+  return Promise.resolve(LM.createSession()).then(function(s) {
+    self.apiSession = s;
+    return self;
+  }).catch(function(err) {
+    // createSession 失敗時もプレースホルダーでフォールバック
+    self.apiSession = { placeholder: true };
+    return self;
+  });
+};
+
+/**
+ * LLM にプロンプトを送信、結果を受け取り
+ * Prompt API 非対応環境では、既存の session.prompt() を使用
+ * callback: {onChunk, onError, onEnd}
+ */
+PreviewSession.prototype.prompt = function(text, callback) {
+  callback = callback || {};
+  if (!this.apiSession) {
+    callback.onError && callback.onError(new Error("Session not initialized"));
+    return Promise.reject(new Error("Session not initialized"));
+  }
+
+  var self = this;
+  this.history.push({ role: "user", content: text });
+
+  // プレースホルダー session（Prompt API 非対応）の場合、グローバル session を使用
+  if (this.apiSession.placeholder && typeof window.session !== "undefined" && window.session && window.session.prompt) {
+    console.log("Using fallback session (Prompt API not available)");
+    return window.session.prompt(text, callback).then(function(result) {
+      self.history.push({ role: "assistant", content: result });
+      callback.onEnd && callback.onEnd(result);
+      return result;
+    }).catch(function(err) {
+      console.error("Fallback session error:", err);
+      callback.onError && callback.onError(err);
+      throw err;
+    });
+  }
+
+  // Prompt API 対応環境
+  this.abortController = new AbortController();
+  var fullText = "";
+
+  return Promise.resolve(this.apiSession.prompt(text, {
+    signal: this.abortController.signal,
+  })).then(function(stream) {
+    if (!stream[Symbol.asyncIterator]) {
+      return Promise.resolve(stream).then(function(result) {
+        fullText = (typeof result === "string") ? result : String(result);
+        return fullText;
+      });
+    }
+    return (async function() {
+      for await (var chunk of stream) {
+        if (typeof chunk === "string") {
+          fullText += chunk;
+          callback.onChunk && callback.onChunk(chunk);
+        }
+      }
+      return fullText;
+    })();
+  }).then(function(result) {
+    self.history.push({ role: "assistant", content: fullText || result });
+    callback.onEnd && callback.onEnd(fullText || result);
+    return fullText || result;
+  }).catch(function(err) {
+    if (err.name === "AbortError") {
+      callback.onError && callback.onError(new Error("Prompt cancelled"));
+    } else {
+      callback.onError && callback.onError(err);
+    }
+    throw err;
+  });
+};
+
+PreviewSession.prototype.abort = function() {
+  if (this.abortController) {
+    this.abortController.abort();
+  }
+};
+
+PreviewSession.prototype.clone = function() {
+  var cloned = new PreviewSession();
+  cloned.history = this.history.slice();  // 浅いコピー
+  if (this.apiSession && typeof this.apiSession.clone === "function") {
+    cloned.apiSession = this.apiSession.clone();
+  }
+  return cloned;
+};
+
+PreviewSession.prototype.destroy = function() {
+  if (this.apiSession && typeof this.apiSession.destroy === "function") {
+    this.apiSession.destroy();
+  }
+  this.apiSession = null;
+  this.history = [];
+};
+
+// グローバル session インスタンス
+var session = null;
+var busy = false;
+
+/* ================= チャットポップアップ管理 ================= */
+
+/* ================= API ================= */
+
+function apiCall(name, args) {
+  return fetch("/api/call", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: name, arguments: args || {} }),
+  }).then(function(res) {
+    return res.json().then(function(data) {
+      if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+      return data;
+    });
+  }).catch(function(err) {
+    /* fetch エラー or JSON parse 失敗をより詳細に報告する */
+    var msg = err && err.message ? err.message : String(err);
+    if (msg === "Failed to fetch") {
+      throw new Error("サーバーに接続できません。ホストが起動しているか確認してください。");
+    }
+    throw err;
+  });
+}
+
+/* ================= セッション管理 (Claude/ChatGPT ライク) ================= */
+/* セッション = 会話の単位。localStorage に一覧とトランスクリプトを保存する。
+ * 新規セッション作成時は MCP 推奨フロー (list → inspect) を再実行する (再取得原則)。
+ * トランスクリプトはテキストとツール結果の最大 1KB の要約のみ保存する。 */
+var LS_SESSIONS = "apcli-preview:sessions";
+var LS_SESSION_PREFIX = "apcli-preview:session:";
+var currentSessionId = null;
+var currentTranscript = [];
+var _restoring = false;
+var _sessionListed = false;  // 最初のユーザー発話があったら一覧に載せる
+
+function sessionIndex() { return lsGet(LS_SESSIONS) || []; }
+function saveSessionIndex(list) {
+  var kept = list.slice(0, 30);
+  if (!lsSet(LS_SESSIONS, kept)) return;
+
+  /* 30 件の一覧から外れたセッションの本体を削除する。
+   * 先にキーを収集し、localStorage を列挙中に変更しない。 */
+  var keptKeys = new Set(kept.map(function(s) { return LS_SESSION_PREFIX + s.id; }));
+  var staleKeys = [];
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var key = localStorage.key(i);
+      if (key && key.indexOf(LS_SESSION_PREFIX) === 0 && !keptKeys.has(key)) {
+        staleKeys.push(key);
+      }
+    }
+    staleKeys.forEach(function(key) { localStorage.removeItem(key); });
+  } catch (e) { /* localStorage 無効環境では一覧保存のみ */ }
+}
+
+function persistTranscript() {
+  if (!_sessionListed || !currentSessionId) return;
+  lsSet(LS_SESSION_PREFIX + currentSessionId, currentTranscript.slice(-300));
+}
+
+function recordEntry(entry) {
+  if (_restoring) return entry;
+  currentTranscript.push(entry);
+  if (!_sessionListed && entry.kind === "user") {
+    _sessionListed = true;
+    var list = sessionIndex().filter(function(s) { return s.id !== currentSessionId; });
+    list.unshift({ id: currentSessionId,
+                   title: String(entry.text || "").slice(0, 40) || "(無題)",
+                   at: Date.now() });
+    saveSessionIndex(list);
+    renderSessionList();
+  }
+  persistTranscript();
+  return entry;
+}
+
+function renderSessionList() {
+  var el = document.getElementById("session-list");
+  if (!el) return;
+  el.innerHTML = "";
+  sessionIndex().forEach(function(s) {
+    var row = document.createElement("div");
+    row.className = "session-item" + (s.id === currentSessionId ? " active" : "");
+    var btn = document.createElement("button");
+    btn.className = "session-open";
+    btn.textContent = s.title || "(無題)";
+    btn.title = new Date(s.at).toLocaleString();
+    btn.addEventListener("click", function() {
+      if (!busy && s.id !== currentSessionId) openSession(s.id);
+    });
+    var del = document.createElement("button");
+    del.className = "session-del";
+    del.innerHTML = ICONS.close;
+    del.setAttribute("aria-label", "セッション「" + (s.title || "無題") + "」を削除");
+    del.addEventListener("click", function(ev) {
+      ev.stopPropagation();
+      if (!busy) deleteSession(s.id);
+    });
+    row.appendChild(btn);
+    row.appendChild(del);
+    el.appendChild(row);
+  });
+}
+
+function startNewSession(withDiscovery) {
+  currentSessionId = "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  currentTranscript = [];
+  lastTurnCall = null;  // 文脈参照は前セッションへ持ち越さない
+  _sessionListed = false;
+  chatEl.innerHTML = "";
+  clearFollowups();  // 「次の一手」は前セッションの文脈なので消す
+  renderSessionList();
+  if (withDiscovery) return runDiscovery();
+  return Promise.resolve();
+}
+
+function openSession(id) {
+  var t = lsGet(LS_SESSION_PREFIX + id) || [];
+  currentSessionId = id;
+  currentTranscript = t.slice();
+  lastTurnCall = null;  // 復元セッションの文脈は復元後の会話で作り直す
+  _sessionListed = true;
+  _restoring = true;
+  chatEl.innerHTML = "";
+  clearFollowups();  // 「次の一手」は元セッションの文脈なので消す
+  t.forEach(function(e) {
+    if (e.kind === "tool") {
+      var card = document.createElement("div");
+      card.className = "tool-card";
+      card.innerHTML = '<div class="tc-head"><span class="tc-name"></span>' +
+        '<span class="tc-query"></span><span class="tc-state"></span></div>';
+      card.querySelector(".tc-name").textContent = e.tool || "";
+      card.querySelector(".tc-state").textContent =
+        (e.ok === false ? "エラー・" : "") + "履歴";
+      card.querySelector(".tc-query").textContent = e.query || "";
+      chatEl.appendChild(card);
+
+      /* 容量制限で結果を省略した場合は、空の結果 UI を表示しない。 */
+      if (e.summary && e.summary._truncated && e.ok !== false) {
+        var omitted = document.createElement("div");
+        omitted.className = "msg note";
+        var countLabel = e.summary.total_group_count != null ? "グループ数" : "件数";
+        var count = e.summary.total != null ? e.summary.total
+          : e.summary.total_group_count != null ? e.summary.total_group_count
+          : e.summary.record_count;
+        omitted.textContent = "結果の詳細は履歴容量を抑えるため省略しました" +
+          (count != null ? "（" + countLabel + ": " + String(count) + "）" : "") + "。";
+        card.appendChild(omitted);
+      } else if (e.summary && e.ok !== false && TOOL_TEMPLATES[e.tool]) {
+        var iframe = document.createElement("iframe");
+        iframe.setAttribute("sandbox", "allow-scripts");
+        iframe.style.display = "block";
+        iframe.style.width = "100%";
+        iframe.style.height = "340px";
+        iframe.style.background = "var(--bg)";
+        iframe.style.border = "1px solid var(--border)";
+        iframe.style.borderRadius = "8px";
+        iframe.style.marginTop = "6px";
+        card.appendChild(iframe);
+        var st = { iframe: iframe, result: { structuredContent: e.summary }, ready: false };
+        frames.set(iframe.contentWindow, st);
+        iframe.src = "/ui/" + TOOL_TEMPLATES[e.tool] + "?theme=light";
+      }
+    } else {
+      addMsg(e.kind || "note", e.text || "");
+    }
+  });
+  _restoring = false;
+
+  // 履歴から dataset_id を抽出してカタログ情報を復元
+  var usedDatasets = [];
+  t.forEach(function(e) {
+    if (e.tool === "summarize_records" || e.tool === "query_records") {
+      var datasetId = e.args && e.args.dataset_id;
+      if (datasetId && usedDatasets.indexOf(datasetId) < 0) {
+        usedDatasets.push(datasetId);
+      }
+    }
+  });
+  if (usedDatasets.length > 0) {
+    // 使用されたデータセット情報を復元（inspect 済みのデータセットから）
+    var datasets = datasetList.filter(function(d) {
+      return usedDatasets.indexOf(d.dataset_id) >= 0;
+    });
+    if (datasets.length > 0) {
+      // 初期化時に prefetch したカタログから対応するデータセットを取得
+      var entries = datasets.map(function(d) {
+        var key = "apcli-preview:catalog4:" + d.dataset_id;
+        var cached = lsGet(key);
+        return cached && cached.entry;
+      }).filter(Boolean);
+      if (entries.length > 0) {
+        finishDiscovery(entries, datasets);
+      }
+    }
+  }
+
+  renderSessionList();
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+function deleteSession(id) {
+  saveSessionIndex(sessionIndex().filter(function(s) { return s.id !== id; }));
+  try { localStorage.removeItem(LS_SESSION_PREFIX + id); } catch (e) { /* noop */ }
+  if (id === currentSessionId) {
+    startNewSession(true);
+  } else {
+    renderSessionList();
+  }
+}
+
+/* ブラウザ側エラーの転送: 開発側の環境で再現しない不具合を
+ * turn-log 経由で追跡できるようにする。
+ * 無害な定型警告は除外し、1 ページにつき最大 5 件までに制限する
+ * (ResizeObserver 警告の無限転送でログが洪水になった実測対策)。 */
+var _errForwarded = 0;
+var _BENIGN_ERRORS = /ResizeObserver loop|Script error\.$/;
+["error", "unhandledrejection"].forEach(function(evType) {
+  window.addEventListener(evType, function(e) {
+    if (_errForwarded >= 5) return;
+    var msg = evType === "error"
+      ? String(e.message || "") + " @" + String(e.filename || "").split("/").pop() + ":" + (e.lineno || 0)
+      : "unhandledrejection: " + String((e.reason && e.reason.message) || e.reason || "");
+    if (_BENIGN_ERRORS.test(msg)) return;
+    _errForwarded++;
+    try {
+      fetch("/api/turn-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ q: "(browser error)", calls: [],
+                               answer: msg.slice(0, 300) }),
+      }).catch(function() { /* noop */ });
+    } catch (err) { /* noop */ }
+  });
+});
+
+/* ================= チャット DOM ================= */
+
+function addMsg(cls, text) {
+  if (cls === "user") {
+    // 新しいターンの開始 — 区切り線で 1 件 1 件の境界を明示する (eval 中のみ表示)
+    var sep = document.createElement("div");
+    sep.className = "turn-sep";
+    chatEl.appendChild(sep);
+  }
+  var el = document.createElement("div");
+  el.className = "msg " + cls;
+  el.textContent = text;
+  chatEl.appendChild(el);
+  chatEl.scrollTop = chatEl.scrollHeight;
+  if (cls.indexOf("thinking") < 0) {
+    recordEntry({ kind: cls.split(" ")[0], text: String(text).slice(0, 500) });
+  }
+  return el;
+}
+
+/* ── ターン内の進行ステップ表示 ──
+ * 「考えています…」の代わりに、何をしているか (選択/引数生成/実行/返送/回答) を
+ * 行で流す。各行はクリックで詳細 (モデル生出力・引数・抜粋) を展開できる。 */
+var _stepsHost = null;  // { line, detailPre, activeSeg }
+
+function beginTurnSteps() {
+  var wrap = document.createElement("div");
+  wrap.className = "turn-steps";
+  var line = document.createElement("div");
+  line.className = "steps-line";
+  wrap.appendChild(line);
+  var detailPre = document.createElement("pre");
+  detailPre.className = "step-detail";
+  detailPre.hidden = true;
+  wrap.appendChild(detailPre);
+  chatEl.appendChild(wrap);
+  _stepsHost = { line: line, detailPre: detailPre, activeSeg: null };
+}
+
+/* パンくず 1 行 (a › b › c) にステップを追加する。
+ * done(label, detail) で確定し、detail 付きセグメントはクリックで下に展開 */
+function stepStart(label) {
+  if (!_stepsHost) return { done: function() {} };
+  var host = _stepsHost;
+  if (host.line.childElementCount > 0) {
+    var sep = document.createElement("span");
+    sep.className = "sep";
+    sep.textContent = "›";
+    host.line.appendChild(sep);
+  }
+  var seg = document.createElement("span");
+  seg.className = "seg running";
+  seg.textContent = label;
+  host.line.appendChild(seg);
+  chatEl.scrollTop = chatEl.scrollHeight;
+  var finished = false;
+  return {
+    done: function(finalLabel, detailText) {
+      if (finished) return;
+      finished = true;
+      seg.classList.remove("running");
+      seg.textContent = finalLabel || label;
+      if (!detailText) return;
+      seg.classList.add("has-detail");
+      seg.setAttribute("role", "button");
+      seg.tabIndex = 0;
+      var toggle = function() {
+        if (host.activeSeg === seg) {
+          host.detailPre.hidden = true;
+          seg.classList.remove("active");
+          host.activeSeg = null;
+        } else {
+          if (host.activeSeg) host.activeSeg.classList.remove("active");
+          host.detailPre.textContent = detailText;
+          host.detailPre.hidden = false;
+          seg.classList.add("active");
+          host.activeSeg = seg;
+        }
+      };
+      seg.addEventListener("click", toggle);
+      seg.addEventListener("keydown", function(e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+      });
+    },
+  };
+}
+
+function setStatus(text, cls) {
+  statusEl.className = cls || "";
+  statusEl.setAttribute("aria-label", text);
+  statusEl.setAttribute("data-tip", text);
+  statusEl.innerHTML =
+    '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">' +
+    '<circle cx="6" cy="6" r="5" fill="currentColor"/></svg>';
+}
+
+/* ================= MCP Apps ホストブリッジ ================= */
+/* iframe (base.js の軽量クライアント) と JSON-RPC over postMessage で会話する。
+ * ui/initialize に応答 → initialized 受信後に tool-result 通知を送る。
+ * iframe からの tools/call は /api/call に中継する (summarize のドリルダウン等)。 */
+
+var frames = new Map(); // contentWindow → { iframe, result, ready }
+
+window.addEventListener("message", function(event) {
+  var msg = event.data;
+
+  /* list_datasets UI でデータセットが選択された */
+  if (msg && msg.type === "dataset-selected" && msg.dataset_id) {
+    var dataset_entry = datasetList.find(function(d) { return d.dataset_id === msg.dataset_id; });
+    if (dataset_entry) {
+      addMsg("note", "データセット「" + msg.dataset_id + "」を選択しました。情報を取得中…");
+      inputEl.disabled = true;
+      sendBtn.disabled = true;
+      inspectAndStartSession(dataset_entry).then(function() {
+        inputEl.disabled = false;
+        sendBtn.disabled = false;
+        addMsg("note", "✓ 準備完了。質問をどうぞ");
+      }).catch(function() {
+        inputEl.disabled = false;
+        sendBtn.disabled = false;
+      });
+    }
+    return;
+  }
+
+  var st = frames.get(event.source);
+  if (!st) return;
+  if (!msg || msg.jsonrpc !== "2.0") return;
+
+  if (msg.method === "ui/initialize" && msg.id != null) {
+    event.source.postMessage({
+      jsonrpc: "2.0", id: msg.id,
+      result: {
+        protocolVersion: "2026-01-26",
+        hostInfo: { name: "apcli-preview", version: "1.0.0" },
+        hostCapabilities: { serverTools: {} },
+      },
+    }, "*");
+  } else if (msg.method === "ui/notifications/initialized") {
+    st.ready = true;
+    if (st.result) {
+      event.source.postMessage({
+        jsonrpc: "2.0",
+        method: "ui/notifications/tool-result",
+        params: st.result,
+      }, "*");
+    }
+  } else if (msg.method === "ui/notifications/size-changed") {
+    var h = msg.params && msg.params.height;
+    if (h) st.iframe.style.height = Math.max(160, Math.min(h + 8, 2000)) + "px";
+  } else if (msg.method === "tools/call" && msg.id != null) {
+    var p = msg.params || {};
+    apiCall(p.name, p.arguments).then(function(result) {
+      event.source.postMessage({ jsonrpc: "2.0", id: msg.id, result: result }, "*");
+    }).catch(function(err) {
+      event.source.postMessage({
+        jsonrpc: "2.0", id: msg.id,
+        error: { code: -32000, message: String(err && err.message || err) },
+      }, "*");
+    });
+  }
+});
+
+/* ── ローカル知識キャッシュ (localStorage) ── */
+
+function lsGet(key) {
+  try { var s = localStorage.getItem(key); return s ? JSON.parse(s) : null; }
+  catch (e) { return null; }
+}
+function lsSet(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (e) {
+    return false;  // quota 超過・localStorage 無効環境
+  }
+}
+
+/* 教訓メモリ: 失敗した呼び出し (0件/エラー) と、その後成功した呼び出しを
+ * ローカルに記録し、後のセッションのシステムプロンプトに注入する。
+ * eval では run 間の比較可能性を守るため既定オフ (?lessons=1 で有効化)。 */
+var LS_LESSONS = "apcli-preview:lessons";
+
+function lessonsEnabled() {
+  var v = new URLSearchParams(location.search).get("lessons");
+  if (v === "1") return true;
+  if (v === "0") return false;
+  return !isEvalMode();
+}
+
+function recordLesson(lesson) {
+  var all = lsGet(LS_LESSONS) || [];
+  var key = lesson.tool + JSON.stringify(lesson.args) + lesson.outcome;
+  all = all.filter(function(l) {
+    return (l.tool + JSON.stringify(l.args) + l.outcome) !== key;
+  });
+  all.push(lesson);
+  if (all.length > 20) all = all.slice(all.length - 20);
+  lsSet(LS_LESSONS, all);
+}
+
+function lessonLines(limit) {
+  var all = lsGet(LS_LESSONS) || [];
+  return all.slice(-limit).map(function(l) {
+    var s = l.tool + " " + JSON.stringify(l.args) + " → " + l.outcome;
+    if (l.followup) {
+      s += " / その後 " + l.followup.tool + " " + JSON.stringify(l.followup.args) + " で成功";
+    }
+    return s.length > 160 ? s.slice(0, 160) + "…" : s;
+  });
+}
+
+/* 観測ストア: 実際のツール結果から得た品質観測をローカルに蓄積し、
+ * 質問に関連するものだけを毎ターン取り出してプロンプトに添える (逐次参照)。
+ * 内容はすべて実行結果由来 (フィールドの群数・上位値・キーワードの該当件数) で、
+ * データセット固有の文言は持たない。教訓メモリと同じスイッチで制御する。 */
+var LS_OBSERVED = "apcli-preview:observed";
+var OBSERVED_CAP = 40;
+
+function recordObservation(tool, args, data) {
+  if (!lessonsEnabled()) return;
+  var store = lsGet(LS_OBSERVED) || { fields: {}, keywords: {} };
+  if (tool === "summarize_records" && Array.isArray(args.group_by) &&
+      args.group_by.length === 1 && Array.isArray(data.rows) && data.rows.length > 0) {
+    store.fields[args.group_by[0]] = {
+      groups: data.total_groups != null ? data.total_groups : data.rows.length,
+      top: data.rows.slice(0, 3).map(function(r) { return String((r || [])[0]); }),
+      at: Date.now(),
+    };
+  }
+  if (tool === "query_records" && typeof args.q === "string" && args.q &&
+      data.total != null) {
+    store.keywords[args.q] = { total: data.total, at: Date.now() };
+  }
+  ["fields", "keywords"].forEach(function(kind) {
+    var keys = Object.keys(store[kind]);
+    if (keys.length > OBSERVED_CAP) {
+      keys.sort(function(a, b) { return (store[kind][a].at || 0) - (store[kind][b].at || 0); });
+      keys.slice(0, keys.length - OBSERVED_CAP).forEach(function(k) { delete store[kind][k]; });
+    }
+  });
+  lsSet(LS_OBSERVED, store);
+}
+
+/* 質問文に関連する観測を最大2件取り出す (小さなローカル RAG) */
+function observationHints(question) {
+  if (!lessonsEnabled()) return [];
+  var store = lsGet(LS_OBSERVED) || { fields: {}, keywords: {} };
+  var qNorm = question.replace(/[の\s]/g, "");
+  var hints = [];
+  Object.keys(store.fields).forEach(function(f) {
+    if (hints.length >= 2) return;
+    if (qNorm.indexOf(f.replace(/[の\s]/g, "")) >= 0) {
+      var o = store.fields[f];
+      hints.push("「" + f + "」の集計は約" + o.groups + "群、上位: " + o.top.join("、"));
+    }
+  });
+  Object.keys(store.keywords).forEach(function(k) {
+    if (hints.length >= 2) return;
+    if (question.indexOf(k) >= 0) {
+      hints.push("キーワード「" + k + "」の検索該当は約" + store.keywords[k].total + "件");
+    }
+  });
+  return hints;
+}
+
+/* ── フィールド候補の検索 (ハーネス側の決定的マッチング) ──
+ * 大型 LLM が文脈内で暗黙にやる「ユーザー語彙 → 項目名」の対応付けを、
+ * カタログとの文字バイグラム類似 + codelist 値の一致で決定的に肩代わりする。
+ * カタログのみから導出され毎回同じ結果になるため eval でも常時有効。 */
+
+function _bigrams(s) {
+  var set = {};
+  var t = String(s).replace(/[\sのがをにはでと、。?？!！]/g, "");
+  for (var i = 0; i < t.length - 1; i++) set[t.slice(i, i + 2)] = 1;
+  return set;
+}
+
+function _dice(a, b) {
+  var ka = Object.keys(a), kb = Object.keys(b);
+  if (ka.length === 0 || kb.length === 0) return 0;
+  var shared = 0;
+  ka.forEach(function(k) { if (b[k]) shared++; });
+  return 2 * shared / (ka.length + kb.length);
+}
+
+/* 最長共通部分列の長さ (部分語マッチ: 「府省庁ごと」→「所管府省庁」) */
+function _lcsLen(a, b) {
+  var m = a.length, n = b.length;
+  var prev = new Array(n + 1).fill(0);
+  var best = 0;
+  for (var i = 1; i <= m; i++) {
+    var cur = [0];
+    for (var j = 1; j <= n; j++) {
+      cur[j] = a[i - 1] === b[j - 1] ? prev[j - 1] + 1 : 0;
+      if (cur[j] > best) best = cur[j];
+    }
+    prev = cur;
+  }
+  return best;
+}
+
+/* 日本語の数量表現を数値へ ("10万" → 100000, "2億" → 200000000) */
+function _parseJpNumber(s) {
+  var m = String(s).replace(/,/g, "").match(/^(\d+(?:\.\d+)?)(万|億)?$/);
+  if (!m) return null;
+  var v = parseFloat(m[1]);
+  if (m[2] === "万") v *= 1e4;
+  if (m[2] === "億") v *= 1e8;
+  return v;
+}
+
+/* s が t の部分列 (順序を保って含まれる) か */
+function _isSubsequence(s, t) {
+  var i = 0;
+  for (var j = 0; j < t.length && i < s.length; j++) {
+    if (t[j] === s[i]) i++;
+  }
+  return i === s.length;
+}
+
+/* 略称→正式値の解決: 「国交省」→「国土交通省」のような日本語略称は
+ * 「先頭・末尾の文字が一致する部分列」になる一般則を使い、
+ * codelist と観測ストアの実測値に対して照合する (汎用・データセット非依存)。 */
+function _abbrevValueHit(question) {
+  if (question.length > 120) return null;
+  var candidates = [];
+  catalogInfo.forEach(function(c) {
+    Object.keys(c.codelists || {}).forEach(function(f) {
+      (c.codelists[f] || []).forEach(function(v) { candidates.push({ f: f, v: v }); });
+    });
+  });
+  if (lessonsEnabled()) {
+    var store = lsGet(LS_OBSERVED) || {};
+    Object.keys(store.fields || {}).forEach(function(f) {
+      ((store.fields[f] || {}).top || []).forEach(function(v) {
+        candidates.push({ f: f, v: v });
+      });
+    });
+  }
+  for (var ci = 0; ci < candidates.length; ci++) {
+    var label = String(candidates[ci].v).replace(/^[\d\-]+\s*/, "");
+    if (label.length < 4 || question.indexOf(label) >= 0) continue;
+    for (var len = 3; len <= 5; len++) {
+      for (var s = 0; s + len <= question.length; s++) {
+        var sub = question.slice(s, s + len);
+        if (sub !== label &&
+            sub.charAt(0) === label.charAt(0) &&
+            sub.charAt(len - 1) === label.charAt(label.length - 1) &&
+            _isSubsequence(sub, label)) {
+          return { f: candidates[ci].f, v: candidates[ci].v };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/* desc 照合の内容語トークン: 漢字2文字の窓 + カタカナ語 (3文字以上) */
+function _contentTokens(qn) {
+  var toks = {};
+  for (var i = 0; i + 2 <= qn.length; i++) {
+    var t = qn.slice(i, i + 2);
+    if (/^[一-鿿]{2}$/.test(t)) toks[t] = true;
+  }
+  (qn.match(/[ァ-ヶー]{3,}/g) || []).forEach(function(t) { toks[t] = true; });
+  return Object.keys(toks);
+}
+
+/* desc 照合 (PoC)。?desch=0 で無効化して A/B 測定できる */
+function descHintsEnabled() {
+  return cfgParam("desch") !== "0";
+}
+
+function fieldHints(question) {
+  var qn = question.replace(/[\sのがをにはでと、。?？!！]/g, "");
+  var qb = _bigrams(question);
+  var crossIntent = /クロス|掛け合わせ/.test(question);
+  var scored = [];
+  var valueHit = null;
+  catalogInfo.forEach(function(c) {
+    (c.allFields || []).forEach(function(f) {
+      var fn = f.replace(/[\sの]/g, "");
+      var score;
+      if (question.indexOf(f) >= 0) {
+        score = 1;
+      } else {
+        var lcs = _lcsLen(qn, fn);
+        score = Math.max(
+          _dice(qb, _bigrams(f)),
+          /* 3文字以上の連続一致は floor 0.4 (「懸念点」等の短い部分語を拾う) */
+          lcs >= 3 ? Math.max(0.4, lcs / fn.length) : 0);
+      }
+      if (score >= 0.25) {
+        scored.push({
+          f: f, fn: fn, score: score,
+          groupable: c.groupable.indexOf(f) >= 0,
+          aggregatable: c.aggregatable.indexOf(f) >= 0,
+        });
+      }
+    });
+    Object.keys(c.codelists || {}).forEach(function(f) {
+      (c.codelists[f] || []).forEach(function(v) {
+        var label = String(v).replace(/^[\d\-]+\s*/, "");  // "3 縦覧等" → "縦覧等"
+        /* 最長ラベルの一致を採用する。先勝ちだと「申請等」(1 申請等) が
+         * 「申請等に基づく処分通知等」(2-1) を部分文字列として吸ってしまう */
+        if (label.length >= 2 && question.indexOf(label) >= 0 &&
+            (!valueHit || label.length > (valueHit._labelLen || 0))) {
+          valueHit = { f: f, v: v, _labelLen: label.length };
+        }
+      });
+    });
+  });
+  /* desc 照合: フィールド名で拾えない言い回し (「根拠となる法律」→ 法令名 等) を
+   * dataset.yaml の説明文と突合して拾う。desc は信頼境界の外 (第三者が書ける
+   * 自由記述) のため、本文はプロンプトに一切出さず照合の語彙としてだけ使う。
+   * スコアは 0.35 固定で名前一致 (完全 1.0 / 部分 0.4+) より常に下に置き、
+   * 名前で拾えた候補を押し退けないようにする */
+  if (descHintsEnabled()) {
+    /* 集計の定型語 (「◯◯ごとの件数」等) は内容語ではないので突合しない。
+     * measure 系フィールドの desc (「…の件数」) への誤ヒット対策 */
+    var qtoks = _contentTokens(qn).filter(function(t) {
+      return !/^(件数|合計|平均|総数|総計|内訳|一覧|分布|割合|構成|上位|順位)$/.test(t);
+    });
+    var descTokenHits = {};  // tok → { field: catalog } (一般語の棄却用)
+    catalogInfo.forEach(function(c) {
+      Object.keys(c.descs || {}).forEach(function(f) {
+        var d = c.descs[f];
+        qtoks.forEach(function(tok) {
+          if (d.indexOf(tok) >= 0) {
+            if (!descTokenHits[tok]) descTokenHits[tok] = {};
+            descTokenHits[tok][f] = c;
+          }
+        });
+      });
+    });
+    var descPushed = {};
+    Object.keys(descTokenHits).forEach(function(tok) {
+      var fs = Object.keys(descTokenHits[tok]);
+      if (fs.length > 3) return;  // 多くの desc に現れる一般語 (「手続」等) は棄却
+      fs.forEach(function(f) {
+        if (descPushed[f]) return;
+        descPushed[f] = true;
+        if (scored.some(function(x) { return x.f === f; })) return;  // 名前一致を優先
+        var c = descTokenHits[tok][f];
+        scored.push({
+          f: f, fn: f.replace(/[\sの]/g, ""), score: 0.35, desc_hit: true,
+          groupable: c.groupable.indexOf(f) >= 0,
+          aggregatable: c.aggregatable.indexOf(f) >= 0,
+        });
+      });
+    });
+  }
+  /* 同点は長い (=より特定的な) 名前を優先。
+   * 「非オンライン手続件数」が部分文字列の「オンライン手続件数」に吸われる事故対策 */
+  /* 候補ゼロのときは 2 文字の漢字内容語 (「士業」等) をフィールド名の
+   * 部分一致で拾う。多数のフィールドに当たる一般語 (「手続」等) は除外 */
+  if (scored.length === 0) {
+    /* トークンごとに判定する: 「士業」(1 フィールド一致) は採用し、
+     * 「手続」(多数一致の一般語) はそのトークンだけ棄却する */
+    var tokenHits = {};  // tok → { field: catalog }
+    for (var qi = 0; qi + 2 <= qn.length; qi++) {
+      var tok = qn.slice(qi, qi + 2);
+      if (!/^[一-鿿]{2}$/.test(tok)) continue;
+      catalogInfo.forEach(function(c) {
+        (c.allFields || []).forEach(function(f) {
+          if (f.indexOf(tok) >= 0) {
+            if (!tokenHits[tok]) tokenHits[tok] = {};
+            tokenHits[tok][f] = c;
+          }
+        });
+      });
+    }
+    var pushed = {};
+    Object.keys(tokenHits).forEach(function(tok) {
+      var fs = Object.keys(tokenHits[tok]);
+      if (fs.length > 2) return;  // 一般語は棄却
+      fs.forEach(function(f) {
+        if (pushed[f]) return;
+        pushed[f] = true;
+        var c = tokenHits[tok][f];
+        scored.push({
+          f: f, fn: f.replace(/[\sの]/g, ""), score: 0.35,
+          groupable: c.groupable.indexOf(f) >= 0,
+          aggregatable: c.aggregatable.indexOf(f) >= 0,
+        });
+      });
+    });
+  }
+  /* codelist 値の完全一致が無ければ略称照合 (国交省 → 国土交通省 等) を試す */
+  if (!valueHit) valueHit = _abbrevValueHit(question);
+  /* 「フィールドが「値”」の引用形式は where 指定として解釈する。
+   * codelist が無いフィールド (所管府省庁等) のドリルダウンもこれで通る。
+   * 明示的な引用は codelist 照合より確実なので、既存の valueHit を上書きする */
+  var qv = question.match(/([^\s「」、。]+?)が「([^」]+)」/);
+  if (qv) {
+    var qvf = normalizeField(qv[1], _fieldIndex());
+    if (qvf) {
+      var qvv = qv[2];
+      /* 引用値が codelist のコード値またはラベルと完全一致するならコード値に
+       * 解決する (「申請等」→ "1 申請等")。部分一致 where が「申請等に基づく…」
+       * まで巻き込むのを防ぐ。一致しない引用値はそのまま使う */
+      catalogInfo.forEach(function(c) {
+        ((c.codelists || {})[qvf] || []).forEach(function(v) {
+          var vs = String(v);
+          if (vs === qv[2] || vs.replace(/^[\d\-]+\s*/, "") === qv[2]) qvv = vs;
+        });
+      });
+      valueHit = { f: qvf, v: qvv };
+    }
+  }
+  scored.sort(function(a, b) { return b.score - a.score || b.f.length - a.f.length; });
+  /* 同義候補の重複排除: 名前の共通部分列が長い候補 (所管府省庁/実施府省庁 等) は
+   * 上位のみ残す。ただしクロス集計の意図がある場合は 2 軸目を殺さないよう保持
+   * (「提出方法と電子署名」は共通接頭辞「添付書類等」を持つが別フィールド)。 */
+  var top = [];
+  scored.forEach(function(x) {
+    if (top.length >= 3) return;
+    var dup = !crossIntent && top.some(function(t) { return _lcsLen(t.fn, x.fn) >= 3; });
+    if (!dup) top.push(x);
+  });
+
+  var hints = [];
+  if (top.length > 0) {
+    hints.push("関連フィールド候補: " +
+      top.slice(0, 2).map(function(x) { return x.f; }).join("、"));
+  }
+
+  /* 質問の意図語 + 候補フィールドから「呼び出し候補」を1個の完結した形で提案する。
+   * 断片 (group_by 候補 / metrics 候補) を別々に出すと片方だけ採用される
+   * 事故が実測で発生したため、tool + args をまとめて示す。 */
+  /* desc 由来の候補は、名前一致の groupable 候補が無いときだけ軸に使う。
+   * 名前一致に対する2軸目として勝手に加えると、desc 照合の有無で提案が
+   * 変わってしまう (クロス意図が明示された場合は両方使う) */
+  var gTop = top.filter(function(x) { return x.groupable && x.score >= 0.35; });
+  var gName = gTop.filter(function(x) { return !x.desc_hit; });
+  var groupable = (gName.length > 0 && !crossIntent ? gName : gTop)
+    .map(function(x) { return x.f; });
+  var descOnlyAxes = gName.length === 0;
+  var aggs = top.filter(function(x) { return x.aggregatable; }).map(function(x) { return x.f; });
+
+  var aggIntent = /ごと|毎|別|内訳|分布|割合|構成|クロス|集計|分け/.test(question);
+  var sumIntent = /合計|総計|総和/.test(question);
+  var avgIntent = /平均/.test(question);
+  var orderIntent = /多い順|少ない順|順に|トップ|ランキング|上位/.test(question);
+  var listIntent = /見せて|一覧|検索|探して|表示|リスト/.test(question);
+  /* 「最も◯◯が多いXはどこ?」型 = 集計してランキング */
+  var rankIntent = /一番|最も|多い|少ない/.test(question) && /どこ|どれ|どの|何/.test(question);
+  /* 話題語の抽出: 「◯◯に関する手続」「◯◯の手続」→ キーワード検索の提案材料 */
+  var topic = null;
+  var tm = question.match(/「?([^「」\s、。]{2,12})」?(?:に関する|に関して|について|関係の|の手続)/);
+  if (tm) topic = tm[1].replace(/の$/, "");
+
+  /* 数値しきい値: 「10万件を超える」→ {"$gte": 100000} */
+  var thWhere = null;
+  var thMatch = question.replace(/,/g, "").match(
+    /(\d+(?:\.\d+)?(?:万|億)?)\s*(?:件|円|人|回)?\s*(を?超え|以上|より多い|以下|未満|より少ない)/);
+  if (thMatch && aggs.length > 0) {
+    var n = _parseJpNumber(thMatch[1]);
+    if (n != null) {
+      thWhere = {};
+      thWhere[aggs[0]] = /以下|未満|より少ない/.test(thMatch[2]) ? { "$lte": n } : { "$gte": n };
+    }
+  }
+
+  var sug = null;
+  if (orderIntent && listIntent && aggs.length > 0) {
+    sug = { tool: "query_records", args: { order_by: "-" + aggs[0], limit: 20 } };
+  } else if (thWhere && !aggIntent) {
+    sug = { tool: "query_records", args: { where: thWhere, limit: 20 } };
+  } else if (aggIntent || sumIntent || avgIntent || rankIntent ||
+             (valueHit && !listIntent)) {
+    var args = {};
+    if (groupable.length > 0 && /ごと|毎|別|内訳|分布|割合|構成|クロス|分け/.test(question)) {
+      /* desc 由来の候補しか無いときは確度が低いので、クロス意図が無ければ1軸に絞る */
+      args.group_by = groupable.slice(
+        0, crossIntent || (groupable.length >= 2 && !descOnlyAxes) ? 2 : 1);
+    }
+    if (!args.group_by && rankIntent && groupable.length > 0) {
+      args.group_by = [groupable[0]];
+    }
+    args.metrics = (sumIntent || rankIntent) && aggs.length > 0 ? ["sum:" + aggs[0]]
+      : avgIntent && aggs.length > 0 ? ["avg:" + aggs[0]] : ["count"];
+    if (valueHit) {
+      args.where = {};
+      args.where[valueHit.f] = valueHit.v;
+    } else if (thWhere) {
+      args.where = thWhere;
+    }
+    if (args.group_by || args.where || args.metrics[0] !== "count") {
+      sug = { tool: "summarize_records", args: args };
+    }
+  } else if (valueHit && listIntent) {
+    var w = {};
+    w[valueHit.f] = valueHit.v;
+    sug = { tool: "query_records", args: { where: w, limit: 20 } };
+  }
+  /* フィールド存在型の質問 (「◯◯が関係する手続は?」等): 候補フィールドが
+   * 記入されているレコードの検索を提案する ($not_empty) */
+  if (!sug && top.length > 0 && !top[0].aggregatable &&
+      /が関係|が関わる|に関わる|が介在|が必要な/.test(question)) {
+    var wne = {};
+    wne[top[0].f] = { "$not_empty": true };
+    sug = { tool: "query_records", args: { where: wne, limit: 20 } };
+  }
+  /* 次元フィールドそのものを尋ねる質問 (「類型は?」「どんな種類がある?」):
+   * 集計語 (ごと/別/内訳…) が無くても、その軸での件数集計を提案する。
+   * 「国交省の類型は」が絞り込みだけで終わった実測ギャップへの対処 */
+  if (!sug && top.length > 0 && top[0].groupable &&
+      /どんな|どのような|種類|色んな|いろんな|は[??]?$/.test(question)) {
+    var gargs = { group_by: [top[0].f], metrics: ["count"] };
+    if (valueHit) {
+      gargs.where = {};
+      gargs.where[valueHit.f] = valueHit.v;
+    }
+    sug = { tool: "summarize_records", args: gargs };
+  }
+  /* 全体量の質問 (「全部で何件?」等) は総件数の集計を提案する。
+   * list のデータセット数を答えてしまう誤りが実測で反復したため */
+  if (!sug && /全部で|全体で|総数/.test(question)) {
+    sug = { tool: "summarize_records", args: { metrics: ["count"] } };
+  }
+  /* キーワード検索の提案: 集計系の提案が無く話題語が取れた場合 */
+  if (!sug && topic) {
+    sug = { tool: "query_records", args: { q: topic, limit: 20 } };
+  }
+  /* 単語だけの端的な質問 (「オンライン」等): 意図語が無くても、最も近い
+   * フィールドで 次元→内訳 / 数値→合計 を提案する。無引数 query の総件数を
+   * フィールドの件数として誤答する事故が実測で発生したため */
+  if (!sug && top.length > 0 && qn.length <= 10) {
+    if (top[0].groupable) {
+      sug = { tool: "summarize_records",
+              args: { group_by: [top[0].f], metrics: ["count"] } };
+    } else if (top[0].aggregatable) {
+      sug = { tool: "summarize_records", args: { metrics: ["sum:" + top[0].f] } };
+    }
+  }
+  if (sug) {
+    hints.push("呼び出し候補: " + sug.tool + " " + JSON.stringify(sug.args));
+  }
+  return {
+    hints: hints.slice(0, 3),
+    suggestion: sug,
+    /* linked: 動的スキーマ絞り込み (構造への事前処理) の材料 */
+    linked: { fields: top, groupable: groupable, aggs: aggs, valueHit: valueHit },
+  };
+}
+
+/* リンキング結果で引数生成スキーマを質問ごとに絞り込む (構造への事前処理)。
+ * 存在しない列・偽のコード値・数値列への group_by 等の誤りクラスを
+ * constrained decoding の段階で構造的に生成不能にする。 */
+function narrowedArgsSchema(tool, linked) {
+  var base = argsSchemaFor(tool);
+  var props = JSON.parse(JSON.stringify(base.properties));
+  var allGroupable = [], allAggs = [];
+  catalogInfo.forEach(function(c) {
+    allGroupable = allGroupable.concat(c.groupable);
+    allAggs = allAggs.concat(c.aggregatable);
+  });
+  /* enum は小さく保つ — 大きな制約は実機で生成ストールを起こす */
+  if (props.group_by && allGroupable.length > 0) {
+    var gcand = (linked && linked.groupable && linked.groupable.length > 0)
+      ? linked.groupable : allGroupable;
+    props.group_by = { type: "array", items: { type: "string", enum: gcand.slice(0, 8) } };
+  }
+  if (props.metrics && allAggs.length > 0) {
+    var mvals = ["count"];
+    allAggs.slice(0, 3).forEach(function(a) {
+      ["sum", "avg"].forEach(function(op) { mvals.push(op + ":" + a); });
+    });
+    props.metrics = { type: "array", items: { type: "string", enum: mvals } };
+  }
+  if (props.order_by && linked && linked.aggs && linked.aggs.length > 0) {
+    var ovals = [];
+    linked.aggs.forEach(function(a) { ovals.push(a); ovals.push("-" + a); });
+    props.order_by = { type: "string", enum: ovals };
+  }
+  if (props.where && linked && linked.fields && linked.fields.length > 0) {
+    var wprops = {};
+    var wfields = linked.fields.map(function(x) { return x.f; }).slice(0, 3);
+    if (linked.valueHit && wfields.indexOf(linked.valueHit.f) < 0) {
+      wfields.push(linked.valueHit.f);
+    }
+    wfields.forEach(function(f) {
+      var cl = null;
+      catalogInfo.forEach(function(c) {
+        if (c.codelists && c.codelists[f]) cl = c.codelists[f];
+      });
+      /* codelist を持つ列は実在の値しか書けない (enum は8値まで)。無い列は自由入力 */
+      wprops[f] = cl ? { type: "string", enum: cl.slice(0, 8) } : {};
+    });
+    props.where = { type: "object", properties: wprops, additionalProperties: false };
+  }
+  return { type: "object", properties: props,
+           required: base.required, additionalProperties: false };
+}
+
+/* 失敗時の「もしかして」: 呼び出しに含まれる未知のフィールド名に対し、
+ * カタログから近い正式名を提案してエラーフィードバックに含める。
+ * SLM がエラー文から自力で修正案を導く負担を決定的に肩代わりする。 */
+function didYouMean(args) {
+  var idx = _fieldIndex();
+  var names = [];
+  (args.group_by || []).forEach(function(f) { names.push(f); });
+  if (args.order_by) names.push(String(args.order_by).replace(/^-/, ""));
+  if (args.explode) names.push(args.explode);
+  if (args.where) names = names.concat(Object.keys(args.where));
+  var sugg = [];
+  names.forEach(function(n) {
+    if (idx[String(n).replace(/[の\s]/g, "")]) return;  // 既知名は対象外
+    var nb = _bigrams(n);
+    var scored = [];
+    catalogInfo.forEach(function(c) {
+      (c.allFields || []).forEach(function(f) {
+        var s = _dice(nb, _bigrams(f));
+        if (s >= 0.2) scored.push({ f: f, s: s });
+      });
+    });
+    scored.sort(function(a, b) { return b.s - a.s; });
+    if (scored.length > 0) {
+      sugg.push("「" + n + "」→ " +
+        scored.slice(0, 2).map(function(x) { return "「" + x.f + "」"; }).join(" か "));
+    }
+  });
+  return sugg;
+}
+
+/* SLM が行ったツール呼び出しの記録 (eval モードの採点に使う) */
+var toolCallLog = [];
+
+/* クエリ内容の日本語表示 (UI テンプレートの条件表示と同じ記法) */
+var _OP_JA = { "$gte": "≧", "$lte": "≦", "$ne": "≠", "$eq": "=",
+               "$not_contains": "含まない", "$not_empty": "非空" };
+var _AGG_JA = { sum: "合計", avg: "平均", min: "最小", max: "最大" };
+
+function describeQuery(tool, args) {
+  args = args || {};
+  if (tool === "list_datasets") {
+    return "データセット一覧" + (args.q ? "（検索: 「" + args.q + "」）" : "を取得");
+  }
+  if (tool === "inspect_dataset") {
+    return "構造・品質を検査: " + (args.dataset_id || "");
+  }
+  var parts = [];
+  if (tool === "summarize_records") {
+    parts.push(args.group_by && args.group_by.length > 0
+      ? "集計軸: " + args.group_by.join(" × ") : "全体を集計");
+    var ms = (args.metrics || ["count"]).map(function(m) {
+      if (m === "count") return "件数";
+      var p = String(m).split(":");
+      return (_AGG_JA[p[0]] || p[0]) + "(" + p[1] + ")";
+    });
+    parts.push("指標: " + ms.join(", "));
+    if (args.explode) parts.push("展開: " + args.explode);
+  }
+  if (tool === "query_records") {
+    if (args.q) parts.push("検索: 「" + args.q + "」");
+    if (Array.isArray(args.select) && args.select.length > 0) {
+      parts.push("出力: " + args.select.join(", "));
+    }
+    if (args.order_by) {
+      var desc = String(args.order_by).charAt(0) === "-";
+      parts.push("ソート: " + (desc ? String(args.order_by).slice(1) + " (降順)"
+                                    : args.order_by + " (昇順)"));
+    }
+    if (parts.length === 0) parts.push("レコード取得");
+  }
+  if (args.where && typeof args.where === "object") {
+    var conds = Object.keys(args.where).map(function(k) {
+      var v = args.where[k];
+      if (Array.isArray(v)) return k + " = " + v.join("|");
+      if (v && typeof v === "object") {
+        return Object.keys(v).map(function(op) {
+          return k + " " + (_OP_JA[op] || op) + " " + v[op];
+        }).join(", ");
+      }
+      return k + " ⊃ 「" + v + "」";
+    });
+    parts.push("絞り込み: " + conds.join(" / "));
+  }
+  if (args.having) parts.push("集計後フィルタ: " + JSON.stringify(args.having));
+  if (args.limit) parts.push("上限: " + args.limit + " 件");
+  return parts.join(" ／ ");
+}
+
+/* ツールカード (ヘッダー + クエリ内容 + 引数 + UI iframe + 生 JSON) を描画して実行する。
+ * extra.orig にモデルの元引数を渡すと、サニタイズ補正が入った場合に差分を表示する */
+function runToolWithCard(name, args, extra) {
+  extra = extra || {};
+  toolCallLog.push({ name: name, arguments: args || {} });
+  var histEntry = recordEntry({ kind: "tool", tool: name, query: describeQuery(name, args), args: args });
+  var card = document.createElement("div");
+  card.className = "tool-card";
+  card.innerHTML =
+    '<div class="tc-head"><span class="tc-name"></span>' +
+    '<span class="tc-state">実行中…</span></div>';
+  card.querySelector(".tc-name").textContent = name;
+
+  /* クエリ内容を日本語で常時表示 (ツール名と同じ行)。技術情報は「詳細」に集約 */
+  var queryEl = document.createElement("span");
+  queryEl.className = "tc-query";
+  queryEl.textContent = describeQuery(name, args);
+  var headEl = card.querySelector(".tc-head");
+  headEl.insertBefore(queryEl, headEl.querySelector(".tc-state"));
+
+  /* 引数の「詳細」はカード生成時に即時追加する — 後続の非同期処理が
+   * 失敗しても、何を呼ぼうとしたかは必ず確認できるようにする */
+  var detail = document.createElement("details");
+  var detailSummary = document.createElement("summary");
+  detailSummary.textContent = "詳細";
+  detail.appendChild(detailSummary);
+  var argsPre = document.createElement("pre");
+  argsPre.className = "tc-args";
+  argsPre.textContent = "引数:\n" + JSON.stringify(args || {}, null, 1);
+  detail.appendChild(argsPre);
+  if (extra.orig && JSON.stringify(extra.orig) !== JSON.stringify(args || {})) {
+    var fix = document.createElement("div");
+    fix.className = "tc-fix";
+    fix.textContent = "引数を補正済み — モデル出力: " + JSON.stringify(extra.orig);
+    detail.appendChild(fix);
+  }
+  card.appendChild(detail);
+
+  var host = extra.container || chatEl;
+  host.appendChild(card);
+  if (host.scrollHeight) host.scrollTop = host.scrollHeight;
+  var stateEl = card.querySelector(".tc-state");
+
+  return apiCall(name, args).then(function(result) {
+    var data = result.structuredContent || {};
+    histEntry.ok = !result.isError;
+    /* ツール結果の要約を保存（容量削減）。
+     * 履歴復元時に簡易 UI を再構築するのに必要な最小限のデータのみ保持 */
+    if (!result.isError) {
+      histEntry.summary = summarizeToolResult(name, data);
+    }
+    persistTranscript();
+    if (result.isError) {
+      stateEl.textContent = "エラー";
+      var errEl = document.createElement("div");
+      errEl.className = "msg error";
+      errEl.style.margin = "8px";
+      errEl.textContent = data.error || JSON.stringify(data);
+      card.appendChild(errEl);
+      return result;
+    }
+    stateEl.textContent = "";
+
+    var iframe = document.createElement("iframe");
+    /* ツール結果を描画するフレームは sandbox で権限を最小化する。
+     * postMessage ブリッジだけで動作するため allow-same-origin は不要 */
+    iframe.setAttribute("sandbox", "allow-scripts");
+    iframe.src = "/ui/" + TOOL_TEMPLATES[name] + "?theme=light";  // ホストの白基調に揃える
+    /* 詳細セクション (引数) → iframe (UI) → 詳細セクション (結果) の順で配置する。
+     * iframe 前に詳細を挿入してから iframe を追加すれば、最終的に正しい順序になる */
+    card.insertBefore(detail, card.lastChild);  // 詳細を最後から one-before に移動
+    card.appendChild(iframe);
+    var st = { iframe: iframe, result: result, ready: false };
+    frames.set(iframe.contentWindow, st);
+    /* サイズは iframe 側 (base.js) が body 実寸を size-changed で通知してくる。
+     * ホスト側で scrollHeight を測ると iframe 高さと相互に成長し続けるため測らない */
+
+    var rawPre = document.createElement("pre");
+    rawPre.textContent = "structuredContent:\n" + JSON.stringify(data, null, 2);
+    detail.appendChild(rawPre);
+    card.appendChild(detail);  // 詳細は iframe の下へ移動
+
+    if (host.scrollHeight) host.scrollTop = host.scrollHeight;
+    return result;
+  }).catch(function(err) {
+    stateEl.textContent = "エラー";
+    histEntry.ok = false;
+    persistTranscript();
+    addMsg("error", "ツールを実行できませんでした: " + (err && err.message || err));
+    throw err;
+  });
+}
+
+/* ================= ブラウザ判定 ================= */
+
+function isChrome() {
+  return /Chrome\//.test(navigator.userAgent) && !/Edg\//.test(navigator.userAgent);
+}
+
+function isEdge() {
+  return /Edg\//.test(navigator.userAgent);
+}
+
+/* ================= Chrome 内蔵 AI (Prompt API) ================= */
+
+function lmNamespace() {
+  if (typeof LanguageModel !== "undefined") return LanguageModel;
+  if (typeof window.ai === "object" && window.ai && window.ai.languageModel) {
+    return window.ai.languageModel;
+  }
+  return null;
+}
+
+/* create() に渡す言語オプション。公式ガイドラインに従い
+ * availability() にも同じオプションを渡して判定を一致させる。 */
+var LM_LANG_OPTS = {
+  expectedInputs: [{ type: "text", languages: ["ja", "en"] }],
+  expectedOutputs: [{ type: "text", languages: ["ja"] }],
+};
+var useLangOpts = true;
+
+function lmAvailability(ns) {
+  if (typeof ns.availability === "function") {
+    return Promise.resolve()
+      .then(function() {
+        /* 言語オプション指定で試行（Chrome/Edge で対応状況が異なる可能性）
+         * 失敗したらオプション無しで再試行 */
+        return ns.availability(LM_LANG_OPTS).catch(function() {
+          return ns.availability();
+        });
+      })
+      .then(function(a) {
+        if (a !== "unavailable") {
+          useLangOpts = (a === "available" || a === "downloadable");
+          return a;
+        }
+        // availability だけで unavailable の場合、言語オプション無しで再判定
+        return ns.availability().then(function(b) {
+          useLangOpts = false;
+          return b;
+        }).catch(function() {
+          useLangOpts = false;
+          return "unavailable";
+        });
+      });
+  }
+  if (typeof ns.capabilities === "function") {
+    return ns.capabilities().then(function(c) {
+      useLangOpts = false;
+      return c.available === "readily" ? "available"
+        : c.available === "after-download" ? "downloadable" : "unavailable";
+    });
+  }
+  return Promise.resolve("unavailable");
+}
+
+/* エージェントループの継続指示 (few-shot と実ループで同一文言を使う) */
+var NEXT_INSTR = "この結果を踏まえ、さらにツールが必要なら tool_call、十分なら answer の JSON を1個だけ返す。";
+
+/* few-shot 例に登場する固有の数値。ツール未実行の回答にこれが含まれていたら
+ * パロット (例の数値の丸写し) として差し戻す */
+var FEWSHOT_NUMBERS = ["34,567", "34567", "98,765,432", "98765432", "1,234,567", "1234567"];
+
+/* few-shot: 「質問 → 適切なツール呼び出し (クエリ構築) → 回答」に絞った 2 例。
+ * データセットの構造・品質はハーネスがシステムプロンプトに注入済みなので、
+ * SLM には発見の段取りではなくクエリ構築だけを教える。
+ * 値は架空 (A省/B省) にして実データとの混同を防ぐ。 */
+function buildFewShot() {
+  /* データセット固有の文言は持たず、catalog (list + inspect の結果) から導出する。
+   * catalog が取れない場合のみ抽象プレースホルダにフォールバック。 */
+  var id = datasetIds[0] || "dataset1";
+  var gb = (catalogInfo[0] && catalogInfo[0].groupable[0]) || "フィールドA";
+  var gb2 = (catalogInfo[0] && catalogInfo[0].groupable[1]) || "フィールドB";
+  function toolMsg(name, digest) {
+    return { role: "user", content: "ツール " + name + " の結果(抜粋): " + digest + "\n" + NEXT_INSTR };
+  }
+  function asst(obj) { return { role: "assistant", content: JSON.stringify(obj) }; }
+  var shots = [
+    { role: "user", content: gb + "ごとの件数を集計して" },
+    asst({ action: "tool_call", tool: "summarize_records",
+           arguments: { dataset_id: id, group_by: [gb], metrics: ["count"] } }),
+    toolMsg("summarize_records",
+      '{"columns":["' + gb + '","count"],"rows":[["A",120],["B",45]],"total_groups":2}'),
+    asst({ action: "answer", answer: "件数が最も多いのは A (120件)、次いで B (45件) です。" }),
+    { role: "user", content: gb + "ごとに" + gb2 + "の内訳を見せて" },
+    asst({ action: "tool_call", tool: "summarize_records",
+           arguments: { dataset_id: id, group_by: [gb, gb2], metrics: ["count"] } }),
+    toolMsg("summarize_records",
+      '{"columns":["' + gb + '","' + gb2 + '","count"],"rows":[["A","X",80],["A","Y",40],["B","X",30]],"total_groups":3}'),
+    asst({ action: "answer", answer: "A では X (80件)、Y (40件)。B は X (30件) のみです。" }),
+    { role: "user", content: "全部で何件ある?" },
+    asst({ action: "tool_call", tool: "summarize_records",
+           arguments: { dataset_id: id, metrics: ["count"] } }),
+    toolMsg("summarize_records", '{"columns":["count"],"rows":[[34567]],"total_groups":1}'),
+    asst({ action: "answer", answer: "全体で 34,567 件です。" }),
+    { role: "user", content: "「A」に関するレコードを検索して" },
+    asst({ action: "tool_call", tool: "query_records",
+           arguments: { dataset_id: id, q: "A", limit: 20 } }),
+    toolMsg("query_records",
+      '{"total":2,"columns":["名称"],"rows":[["Aの記録1"],["Aの記録2"]]}'),
+    asst({ action: "answer", answer: "該当は 2 件です: Aの記録1、Aの記録2。" }),
+  ];
+  /* sum の例 — 「◯◯の合計」を count で代用する誤りが実測で最多。
+   * group_by との複合形にする (単独例では合成できないことが実測で判明) */
+  var agg = catalogInfo[0] && catalogInfo[0].aggregatable[0];
+  if (agg) {
+    shots.push(
+      { role: "user", content: gb + "ごとの" + agg + "の合計を出して" },
+      asst({ action: "tool_call", tool: "summarize_records",
+             arguments: { dataset_id: id, group_by: [gb], metrics: ["sum:" + agg] } }),
+      toolMsg("summarize_records",
+        '{"columns":["' + gb + '","sum_' + agg + '"],"rows":[["A",98765432],["B",1234567]],"total_groups":2}'),
+      asst({ action: "answer",
+             answer: "A の合計が最も多く 98,765,432、次いで B (1,234,567) です。" }));
+  }
+  /* where の例 — 値フィルタを q の文章検索で代用する誤りへの対策 (codelist の実値を使う) */
+  var cv = (catalogInfo[0] && catalogInfo[0].codeValues) || {};
+  var wf = Object.keys(cv)[0];
+  if (wf) {
+    var w = {};
+    w[wf] = cv[wf];
+    shots.push(
+      { role: "user", content: wf + "が「" + cv[wf] + "」のレコードを見せて" },
+      asst({ action: "tool_call", tool: "query_records",
+             arguments: { dataset_id: id, where: w, limit: 20 } }),
+      toolMsg("query_records", '{"total":6,"columns":["名称"],"rows":[["レコードC"],["レコードD"]]}'),
+      asst({ action: "answer", answer: "該当は 6 件です。例: レコードC、レコードD。" }));
+  }
+  /* メタ質問の例 — 「ツールで取得できます」と使い方を案内して終わる誤りへの対策 */
+  var f3 = catalogInfo[0] ? catalogInfo[0].allFields.slice(0, 3) : [];
+  shots.push(
+    { role: "user", content: "どんなフィールドがある?" },
+    asst({ action: "tool_call", tool: "inspect_dataset", arguments: { dataset_id: id } }),
+    toolMsg("inspect_dataset",
+      '{"dataset_id":"' + id + '","fields":"' + (f3.join("|") || "…") + '|…"}'),
+    asst({ action: "answer",
+           answer: "主なフィールドは " + (f3.join("、") || "…") + " などです。" }));
+  return shots;
+}
+
+function createSession(onProgress) {
+  var monitor = function(m) {
+    m.addEventListener("downloadprogress", function(e) {
+      onProgress(e.loaded || 0);
+    });
+  };
+  var base = {
+    initialPrompts: [{ role: "system", content: systemPrompt }].concat(buildFewShot()),
+    monitor: monitor,
+  };
+  var lang = useLangOpts ? LM_LANG_OPTS : {};
+  /* 出力が決定的なほどツール引数の精度が上がる。sampling 指定・言語指定・
+   * initialPrompts に対応しない環境の順にフォールバックする */
+  var attempts = [
+    Object.assign({}, base, lang, { temperature: 0, topK: 1 }),
+    Object.assign({}, base, lang),
+    base,
+    { systemPrompt: systemPrompt, monitor: monitor },
+  ];
+  function tryAt(i) {
+    return LM.create(attempts[i]).catch(function(err) {
+      if (i + 1 < attempts.length) return tryAt(i + 1);
+      throw err;
+    });
+  }
+  return tryAt(0);
+}
+
+/* ── モデルダウンロード UI (公式 do's and don'ts 準拠) ──
+ * - ダウンロードはバナーのボタン押下 (user activation) でのみ開始する
+ * - <progress> で進捗を表示し、DL 完了後の展開・ロード中は indeterminate にする
+ * - 準備が完了するまでチャットは「利用可能」にしない */
+var dlBanner = document.getElementById("dl-banner");
+var dlText = document.getElementById("dl-text");
+var dlBtn = document.getElementById("dl-btn");
+var dlProgress = document.getElementById("dl-progress");
+var dlLabel = document.getElementById("dl-label");
+
+function showDownloadBanner(availState) {
+  dlBanner.hidden = false;
+  var modelName = isEdge() ? "モデル (Phi-mini)" : "モデル (Gemini Nano)";
+  if (availState === "downloading") {
+    dlText.textContent = modelName + " をダウンロード中です。準備が完了するとチャットを利用できます。";
+    dlBtn.textContent = "進捗を表示して準備を続ける";
+  } else {
+    dlText.textContent = "チャットには内蔵 AI " + modelName + " のダウンロードが必要です。下のボタンで開始してください。";
+    dlBtn.textContent = modelName + " をダウンロードして開始";
+  }
+}
+
+function markDlProgress(loaded) {
+  dlProgress.hidden = false;
+  if (loaded >= 1) {
+    // DL 完了 → 展開・メモリロード待ち (所要時間不定のため indeterminate)
+    dlProgress.removeAttribute("value");
+    dlLabel.textContent = "モデルを展開・読み込み中…";
+  } else {
+    dlProgress.value = loaded;
+    dlLabel.textContent = "ダウンロード中… " + Math.round(loaded * 100) + "%";
+  }
+}
+
+dlBtn.addEventListener("click", function() {
+  if (navigator.userActivation && !navigator.userActivation.isActive) {
+    // create() はユーザー操作直後でないとダウンロードを開始できない
+    dlLabel.textContent = "ページを操作してからもう一度押してください。";
+    return;
+  }
+  dlBtn.disabled = true;
+  dlProgress.removeAttribute("value");
+  dlProgress.hidden = false;
+  dlLabel.textContent = "準備中…";
+  ensureSession().then(function() {
+    dlBanner.hidden = true;
+    lmReady = true;
+    sendBtn.disabled = busy;
+    inputEl.placeholder = defaultPlaceholder();
+    addMsg("note", "モデルの準備ができました。質問をどうぞ。");
+    if (isEvalMode()) { runEval(); return; }
+    inputEl.focus();
+  }).catch(function(err) {
+    dlBtn.disabled = false;
+    dlProgress.hidden = true;
+    dlLabel.textContent = "ダウンロードできませんでした: " + (err && err.message || err) +
+      " (空きストレージ 22GB 以上が必要です)";
+  });
+});
+
+var baseSession = null;  // initialPrompts 直後の純粋な状態 (clone の親)
+
+function ensureSession() {
+  if (session) return Promise.resolve(session);
+  if (baseSession) { session = baseSession; return Promise.resolve(session); }
+  return createSession(markDlProgress).then(function(s) {
+    baseSession = s;
+    session = s;
+    var modelMsg = isEdge() ? "Phi-mini" : "Gemini Nano";
+    setStatus("内蔵 AI: 利用可能 (" + modelMsg + ")", "ok");
+    return s;
+  });
+}
+
+/* ターン開始時に base の clone で文脈をリセットする。
+ * Nano のコンテキスト (~9K トークン共有) は超過すると古いターンから
+ * 静かに切り捨てられ、システムプロンプトごと崩れて挙動が不安定になる。
+ * そのため質問 (eval ケース) ごとに base の clone = 新鮮な文脈で始める。
+ * clone は再 create よりはるかに安価。clone 非対応環境は据え置き。 */
+function freshSession() {
+  lastTurnCall = null;  // eval のケース間で文脈を持ち越さない
+  return ensureSession().then(function() {
+    if (!baseSession || typeof baseSession.clone !== "function") return session;
+    var old = session !== baseSession ? session : null;
+    return Promise.resolve(baseSession.clone()).then(function(s) {
+      if (old && typeof old.destroy === "function") {
+        try { old.destroy(); } catch (e) { /* noop */ }
+      }
+      session = s;
+      return s;
+    }).catch(function() { return session; });
+  });
+}
+
+function sessionUsageRatio(s) {
+  if (!s) return null;
+  if (s.inputUsage != null && s.inputQuota) return s.inputUsage / s.inputQuota;
+  if (s.tokensSoFar != null && s.maxTokens) return s.tokensSoFar / s.maxTokens;
+  return null;
+}
+
+/* ================= Thinking Zone 管理 ================= */
+
+function resetSession(reason) {
+  [session, baseSession].forEach(function(s) {
+    if (s && typeof s.destroy === "function") {
+      try { s.destroy(); } catch (e) { /* noop */ }
+    }
+  });
+  session = null;
+  baseSession = null;
+  if (reason) addMsg("note", reason);
+}
+
+/* モデル呼び出しの watchdog: 生成がスタックすると eval 全体が固まるため、
+ * 一定時間で abort して失敗扱いにする。?ptimeout=ms で上書き可 (テスト用)。 */
+var PROMPT_TIMEOUT_MS = (function() {
+  var v = parseInt(new URLSearchParams(location.search).get("ptimeout"), 10);
+  return isNaN(v) || v <= 0 ? 60000 : v;
+})();
+
+function humanizeError(err) {
+  var msg = (err && err.message) || String(err) || "予期しないエラーが発生しました";
+  var errorMap = {
+    "kErrorUnknown": "内蔵 AI でエラーが発生しました。もう一度試してください。",
+    "NotSupportedError": "このブラウザは内蔵 AI に対応していません。Chrome か Edge を使用してください。",
+    "NotAllowedError": "内蔵 AI の使用が許可されていません。",
+    "QuotaExceededError": "コンテキストサイズが超過しました。別の質問を試してください。",
+  };
+  for (var key in errorMap) {
+    if (msg.indexOf(key) >= 0) return errorMap[key];
+  }
+  return msg.length > 200 ? msg.slice(0, 200) + "…" : msg;
+}
+
+function promptWithTimeout(text, opts, timeoutMs) {
+  var limit = timeoutMs || PROMPT_TIMEOUT_MS;
+  var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+  var merged = Object.assign({}, opts || {});
+  if (ctrl) merged.signal = ctrl.signal;
+
+  return new Promise(function(resolve, reject) {
+    var timer = setTimeout(function() {
+      if (ctrl) { try { ctrl.abort(); } catch (e) { /* noop */ } }
+      reject(new Error("モデル応答がタイムアウトしました (" + Math.round(limit / 1000) + "s)"));
+    }, limit);
+    session.prompt(text, merged).then(
+      function(r) {
+        clearTimeout(timer);
+
+        resolve(r);
+      },
+      function(e) {
+        clearTimeout(timer);
+        // kErrorUnknown は処理が成功しているので無視
+        if (e && e.message && e.message.indexOf("kErrorUnknown") >= 0) {
+          console.debug("Prompt API: kErrorUnknown (実処理は成功)", e);
+          resolve("");  // エラーを抑制、処理続行
+          return;
+        }
+        addMsg("error", humanizeError(e));
+        console.error("LLM Error:", e);
+        reject(e);
+      });
+  });
+}
+
+/* 構造化出力の段階フォールバック:
+ * tier 0 = 簡易スキーマ (JSON 妥当性を保証)
+ * tier 1 = プレーン出力 (最後の手段 — JSON 修復が増える)
+ * エスカレートは通知し、記録する。 */
+var _schemaTier = 0;
+var _stallCount = 0;  // 連続タイムアウト数 (2回で制約を外す)
+
+function _constraintFor(tier) {
+  if (tier === 0) return ACTION_SCHEMA_SIMPLE;
+  return null;
+}
+
+function lmPrompt(text, retried) {
+  var exec = function() {
+    var schema = _constraintFor(_schemaTier);
+    var p = schema
+      ? promptWithTimeout(text, { responseConstraint: schema })
+      : promptWithTimeout(text);
+    return p.then(function(r) {
+      _stallCount = 0;  // 正常応答でリセット
+      return r;
+    }).catch(function(err) {
+      if (schema && err && (err.name === "NotSupportedError" || err.name === "TypeError")) {
+        _schemaTier++;
+        addMsg("note", "構造化出力のスキーマが拒否されたためレベルを下げます (tier " +
+          _schemaTier + "): " + (err.message || err.name));
+        return exec();
+      }
+      /* 生成ストール (タイムアウト) が続く場合は制約を外して復旧を試みる */
+      if (schema && err && /タイムアウト/.test(String(err.message || ""))) {
+        _stallCount++;
+        if (_stallCount >= 2) {
+          _schemaTier++;
+          _stallCount = 0;
+          addMsg("note", "生成ストールが続くため構造化出力を無効化します (tier " + _schemaTier + ")");
+        }
+      }
+      throw err;
+    });
+  };
+  return exec().catch(function(err) {
+    if (err && err.name === "QuotaExceededError") {
+      // コンテキスト超過 → セッションを作り直して一度だけ再試行 (履歴は失われる)
+      resetSession("コンテキスト上限に達したためセッションをリセットしました。");
+      return ensureSession().then(function() { return promptWithTimeout(text); });
+    }
+    /* Prompt API の内部エラー (kErrorUnknown 等の一過性障害) は
+     * セッションを作り直して一度だけ再試行する */
+    if (!retried && err && /unknown|invalidstate/i.test(String(err.message || err.name || ""))) {
+      addMsg("note", "モデル内部エラーのためセッションを作り直して再試行します");
+      resetSession(null);
+      return ensureSession().then(function() { return lmPrompt(text, true); });
+    }
+    throw err;
+  });
+}
+
+/* モデル応答から最初の JSON オブジェクトを取り出す (汎用) */
+function _extractJson(raw) {
+  if (!raw) return null;
+  var s = String(raw).trim()
+    .replace(/^```(?:json)?/i, "").replace(/```\s*$/, "").trim();
+  var start = s.indexOf("{");
+  if (start === -1) return null;
+  var depth = 0, inStr = false, esc = false;
+  for (var i = start; i < s.length; i++) {
+    var ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        try { return JSON.parse(s.slice(start, i + 1)); } catch (e) { return null; }
+      }
+    }
+  }
+  return null;
+}
+
+function parseAction(raw) {
+  return _extractJson(raw);
+}
+
+/* 途中で切れた回答 JSON ('{"action":"answer","answer":"…' が閉じない) から
+ * 本文だけを救出する。生 JSON がそのまま画面に出る事故の回避 */
+function salvageAnswer(raw) {
+  var m = String(raw).match(/"answer"\s*:\s*"((?:[^"\\]|\\.)*)/);
+  if (m && m[1] && m[1].length >= 10) {
+    try { return JSON.parse('"' + m[1] + '"'); } catch (e) { return m[1]; }
+  }
+  return null;
+}
+
+/* ── 二段階フロー (?flow=2): ツール選択 → 引数生成 ──
+ * 各段階を専用スキーマで constrained decoding する:
+ *   1. ツール選択 = 4択 enum (構造的にミス不能)
+ *   2. 引数生成 = そのツール専用スキーマ (無関係キーは構造的に出せない)
+ * 単段フローとの A/B 測定用。 */
+
+function flowTwoStep() {
+  /* スイート測定 (19問×4構成) で二段階+ヒントが最良 (89% vs 単段 79%) だったため
+   * 既定を二段階にする。?flow=1 で単段に戻せる。 */
+  return cfgParam("flow") !== "1";
+}
+
+function argsSchemaFor(tool) {
+  var props = {};
+  Object.keys(TOOL_PARAMS[tool] || {}).forEach(function(k) {
+    if (ARGS_SCHEMA.properties[k]) props[k] = ARGS_SCHEMA.properties[k];
+  });
+  return {
+    type: "object",
+    properties: props,
+    required: tool === "list_datasets" ? [] : ["dataset_id"],
+    additionalProperties: false,
+  };
+}
+
+/* 二段階フローの各ステージは 30 秒で切り上げる (フォールバックを速くする) */
+var STAGE_TIMEOUT_MS = 30000;
+
+function promptJSON(text, schema, fallbackSchema) {
+  var call = schema
+    ? promptWithTimeout(text, { responseConstraint: schema }, STAGE_TIMEOUT_MS)
+    : promptWithTimeout(text, null, STAGE_TIMEOUT_MS);
+  return call.catch(function(err) {
+    if (schema && err && (err.name === "NotSupportedError" || err.name === "TypeError")) {
+      // 絞り込みスキーマが拒否されたら基本スキーマ → プレーンの順に段階フォールバック
+      return promptJSON(text, fallbackSchema || null);
+    }
+    throw err;
+  }).then(function(raw) {
+    return typeof raw === "object" && raw !== null ? raw : _extractJson(String(raw));
+  });
+}
+
+/* 質問 → action JSON 文字列 (既存パイプラインにそのまま流せる形で返す)。
+ * 選択失敗時は単段フローへフォールバック。 */
+var _argsSchemaBroken = false;  // 引数ステージが一度失敗したら以後は軽いスキーマで生成する
+
+/* Chrome 内蔵モデルの内部エラー等を短い日本語説明付きの文字列にする */
+function friendlyErr(err) {
+  var m = String(err && err.message || err || "");
+  if (/kErrorUnknown|unknown error|InvalidStateError/i.test(m)) {
+    return "内蔵 AI の内部エラー (Chrome 側で処理が中断されました): " + m;
+  }
+  return m;
+}
+
+function twoPhaseAction(promptText, linked, suggestion) {
+  var TOOL_SELECT_SCHEMA = {
+    type: "object",
+    properties: { tool: { type: "string", enum: Object.keys(TOOL_TEMPLATES) } },
+    required: ["tool"],
+    additionalProperties: false,
+  };
+  var selStep = stepStart("使うツールを選択中");
+  return promptJSON("次の質問に使うツールを1つ選ぶ。\n" + promptText, TOOL_SELECT_SCHEMA)
+    .then(function(sel) {
+      var tool = sel && sel.tool;
+      if (!tool || !TOOL_TEMPLATES[tool]) {
+        selStep.done("単段へ切替", JSON.stringify(sel));
+        return lmPrompt(promptText);
+      }
+      selStep.done("ツール選択: " + tool, JSON.stringify(sel));
+      /* 引数生成は「絞り込みスキーマ → 基本スキーマ → プレーン」の段階制約。
+       * 一度ストールした環境では絞り込みを省いて軽く生成する */
+      var argStep = stepStart("引数を生成中");
+      var schema = _argsSchemaBroken ? argsSchemaFor(tool) : narrowedArgsSchema(tool, linked);
+      return promptJSON("ツール " + tool + " を呼ぶための引数の JSON を出力する。\n" + promptText,
+                        schema, argsSchemaFor(tool))
+        .then(function(args) {
+          argStep.done("引数を生成", JSON.stringify(args || {}, null, 1));
+          return JSON.stringify({ action: "tool_call", tool: tool, arguments: args || {} });
+        })
+        .catch(function(err) {
+          _argsSchemaBroken = true;
+          /* 呼び出し候補が同じツールなら、その引数で即続行 (待ち時間ゼロの決定的フォールバック) */
+          if (suggestion && suggestion.tool === tool) {
+            argStep.done("候補引数で続行", friendlyErr(err));
+            return JSON.stringify({ action: "tool_call", tool: tool,
+                                    arguments: suggestion.args || {} });
+          }
+          argStep.done("単段へ切替", friendlyErr(err));
+          return lmPrompt(promptText);
+        });
+    })
+    .catch(function(err) {
+      selStep.done("単段へ切替", friendlyErr(err));
+      return lmPrompt(promptText);
+    });
+}
+
+/* ツール結果から要約を抽出（localStorage 容量削減用）。
+ * 完全なデータではなく、UI 再構築に必要な最小限のデータのみ保持 */
+function summarizeToolResult(name, data) {
+  if (!data) return null;
+  var summary = { tool: name };
+  if (name === "query_records") {
+    summary.total = data.total;
+    summary.columns = data.columns;
+    summary.rows = Array.isArray(data.rows) ? data.rows.slice(0, 3) : [];  // 最初の3行のみ
+    if (data.hint) summary.hint = data.hint;
+  } else if (name === "summarize_records") {
+    summary.total_group_count = data.total_group_count;
+    summary.columns = data.columns;
+    summary.rows = Array.isArray(data.rows) ? data.rows.slice(0, 5) : [];  // 最初の5行のみ
+  } else if (name === "list_datasets") {
+    summary.datasets = Array.isArray(data.datasets) ? data.datasets.slice(0, 3) : [];
+  } else {
+    /* inspect_dataset 等は最小のフィールド表でも 1KB を超えやすい。
+     * 空データとして復元せず、省略済みであることを明示する。 */
+    return {
+      _truncated: true,
+      tool: name,
+      dataset_id: data.dataset_id,
+      record_count: data.record_count,
+    };
+  }
+  var s = JSON.stringify(summary);
+  if (s.length <= 1024) return summary;
+  return {
+    _truncated: true,
+    tool: name,
+    dataset_id: data.dataset_id,
+    total: data.total,
+    total_group_count: data.total_group_count,
+    record_count: data.record_count,
+  };
+}
+
+/* ツール結果をモデルに返す抜粋 (Gemini Nano のコンテキストは小さい) */
+function digestForModel(name, data) {
+  /* inspect_dataset はフィールド一覧が以降の group_by / where 指定の生命線
+   * なので行を切り詰めない。代わりに desc 等の長文列を落とし、
+   * 品質判断に必要な列 (fill_rate, groupable 等) だけ残す。 */
+  if (name === "inspect_dataset" && Array.isArray(data.columns) && Array.isArray(data.rows)) {
+    /* システムプロンプトに同じフィールド表 (codelist 含む) を注入済みの
+     * データセットでは要約だけ返す。フルの再送はコンテキストを圧迫し、
+     * 次応答の 90s タイムアウトを実測で引き起こした。 */
+    var catalogEntry = null;
+    catalogInfo.forEach(function(c) {
+      if (c.dataset_id === data.dataset_id && (c.allFields || []).length > 0) catalogEntry = c;
+    });
+    if (catalogEntry) {
+      var dc = {
+        dataset_id: data.dataset_id,
+        record_count: data.record_count != null ? data.record_count : data.total,
+        fields: catalogEntry.allFields.join("|"),
+        note: "各フィールドの型・品質・値はシステムプロンプトの ## データセット を参照。フィールド名は上記の表記をそのまま使う。この後、元の質問に答えるために summarize_records か query_records を必ず呼ぶ。",
+      };
+      var sc = JSON.stringify(dc);
+      return sc.length > 2500 ? sc.slice(0, 2500) + "…" : sc;
+    }
+    var keep = ["id", "role", "type", "groupable", "aggregatable", "multi_value", "fill_rate", "codelist"];
+    var idx = [];
+    keep.forEach(function(k) {
+      var i = data.columns.indexOf(k);
+      if (i >= 0) idx.push(i);
+    });
+    var di = { dataset_id: data.dataset_id };
+    ["record_count", "total", "notes", "quality_summary"].forEach(function(k) {
+      if (data[k] != null) di[k] = data[k];
+    });
+    di.columns = idx.map(function(i) { return data.columns[i]; });
+    di.rows = data.rows.slice(0, 60).map(function(r) {
+      return idx.map(function(i) {
+        var cell = (r || [])[i];
+        if (cell == null) return null;
+        // codelist 等の長い配列セルは先頭のみ (コンテキスト節約)
+        if (Array.isArray(cell) && cell.length > 6) {
+          return cell.slice(0, 6).concat(["…他" + (cell.length - 6) + "件"]);
+        }
+        return cell;
+      });
+    });
+    var si = JSON.stringify(di);
+    return si.length > 6000 ? si.slice(0, 6000) + "…" : si;
+  }
+
+  var ROWS = 12, COLS = 12;
+  function trunc(v) {
+    if (Array.isArray(v)) {
+      var out = v.slice(0, ROWS).map(trunc);
+      if (v.length > ROWS) out.push("…他" + (v.length - ROWS) + "件");
+      return out;
+    }
+    if (v && typeof v === "object") {
+      var o = {};
+      Object.keys(v).forEach(function(k) {
+        if (k === "field_metadata") return; // 表示用メタデータはモデルに不要
+        o[k] = trunc(v[k]);
+      });
+      return o;
+    }
+    if (typeof v === "string" && v.length > 200) return v.slice(0, 200) + "…";
+    return v;
+  }
+  var d = trunc(data);
+  if (Array.isArray(data.columns) && Array.isArray(data.rows)) {
+    d.columns = data.columns.slice(0, COLS);
+    d.rows = data.rows.slice(0, ROWS).map(function(r) { return (r || []).slice(0, COLS); });
+    if (data.columns.length > COLS) d.columns_omitted = data.columns.length - COLS;
+    if (data.rows.length > ROWS) d.rows_omitted = data.rows.length - ROWS;
+  }
+  /* ツール結果のメタデータ (hint, notes, error_detail) を保持する
+   * これにより、次回の再試行時に LLM がヒントを参照できる */
+  if (data.hint) d.hint = data.hint;
+  if (data.notes) d.notes = data.notes;
+  if (data.error_detail) d.error_detail = data.error_detail;
+  var s = JSON.stringify(d);
+  return s.length > 3500 ? s.slice(0, 3500) + "…" : s;
+}
+
+/* ================= エージェントループ ================= */
+
+var lastTurnStats = null;   // 直近ターンの診断情報 (eval が結果に添付する)
+var lastTurnAnswer = null;  // 直近ターンの最終回答 (未回答ターンは null のまま —
+                            // DOM から拾うと前ケースの回答が混入するため)
+var lastTurnCall = null;    // 直近ターンの最後に成功したツール呼び出し {tool, args}
+                            // (次ターンの文脈参照・「そのうち」等の絞り込み継続に使う)
+
+/* 照応表現 (「そのうち」「その中で」等) の検出 */
+function _anaphoric(q) {
+  return /そのうち|その中|これら|それら|同じ条件|さらに/.test(q);
+}
+
+/* 照応表現を検出したら、継続すべき直前ターンの絞り込み (where) を返す */
+function continuationWhere(question) {
+  var w = lastTurnCall && lastTurnCall.args && lastTurnCall.args.where;
+  if (!w || Object.keys(w).length === 0) return null;
+  return _anaphoric(question) ? w : null;
+}
+
+/* CoT (plan-then-act): 制約付き出力の前に短い計画を自由文で書かせる。
+ * 102 問 eval の実測で有害と判明 (計画を書いた時点で満足し、ツールを呼ばず
+ * 架空の数値で直答する — no_call 35件/正答率 38%)。既定オフ。
+ * ?cot=1 で実験用に有効化できる。 */
+function cotEnabled() {
+  return cfgParam("cot") === "1";
+}
+var PLAN_INSTR = "次の質問に答えるための計画を1行だけ書く: 使うツール名と、" +
+  "group_by / where / q に入れるフィールド名や値。" +
+  "使うフィールドの記入率が低い (## データセット参照) 場合は「記入率注意」も書く。" +
+  "JSON は書かない。\n質問: ";
+
+/* 質問との関連度でデータセットを順位付けする (タイトル・ID の文字一致)。
+ * データセット固有の知識は使わない汎用ロジック */
+function rankDatasets(question) {
+  var qb = _bigrams(question);
+  return datasetList.map(function(d) {
+    var title = String(d.title || "");
+    var score = _dice(qb, _bigrams(title + " " + d.dataset_id));
+    var lcs = _lcsLen(question, title);
+    if (lcs >= 3) score += lcs / 10;  // タイトルの部分語一致は加点
+    return { d: d, score: score };
+  }).sort(function(a, b) { return b.score - a.score; });
+}
+
+/* 多データセット時: 質問に関連する上位データセットの構造・品質を都度取得し、
+ * catalogInfo を関連順に並べ替える (inspect 済みは再利用。可視のツール実行) */
+function ensureCatalogFor(question) {
+  if (datasetList.length === 0 ||
+      catalogInfo.length >= datasetList.length) return Promise.resolve();
+  var ranked = rankDatasets(question);
+  var top = ranked.slice(0, 2).filter(function(r) { return r.score > 0.1; });
+  if (top.length === 0) top = ranked.slice(0, 1);  // 汎用質問は先頭データセット
+  var changed = false;
+  return top.reduce(function(p, r) {
+    var d = r.d;
+    return p.then(function() {
+      if (catalogInfo.some(function(c) { return c.dataset_id === d.dataset_id; })) return;
+      var key = "apcli-preview:catalog4:" + d.dataset_id;
+      return runToolWithCard("inspect_dataset", { dataset_id: d.dataset_id })
+        .then(function(res) {
+          var entry = extractCatalogEntry(d, res.structuredContent || null);
+          lsSet(key, { at: Date.now(), entry: entry });
+          catalogInfo.push(entry);
+          changed = true;
+        })
+        .catch(function() {
+          var cached = lsGet(key);
+          if (cached && cached.entry) {
+            addMsg("note", "inspect を実行できなかったため「" + d.dataset_id +
+              "」はローカル保存済みの構造・品質情報で継続します");
+            catalogInfo.push(cached.entry);
+            changed = true;
+          }
+        });
+    });
+  }, Promise.resolve()).then(function() {
+    /* 関連順に並べ替え: catalogInfo[0] が提案・dataset_id 補完の基準になる */
+    var order = {};
+    ranked.forEach(function(r, i) { order[r.d.dataset_id] = i; });
+    catalogInfo.sort(function(a, b) {
+      var oa = order[a.dataset_id] != null ? order[a.dataset_id] : 999;
+      var ob = order[b.dataset_id] != null ? order[b.dataset_id] : 999;
+      return oa - ob;
+    });
+    if (changed) {
+      systemPrompt = buildSystemPrompt(describeData || {});
+      if (lmReady) {
+        resetSession(null);  // 新カタログ入りのプロンプトで作り直す
+        return ensureSession();
+      }
+    }
+  });
+}
+
+/* ── CQR: 文脈込み書き直し (?cqr=1, 実験) ──
+ * 照応・省略を含むフォローアップ質問を、直前ターンの呼び出しを踏まえた
+ * 自己完結の質問に書き直してから通常パイプラインに流す (CQR-SQL 方式)。
+ * 書き直した質問にはフィールドヒント・引用形式の解釈がフルに効く。
+ * 書き直しにモデルを1回使うため既定オフ — 効果は eval で測ってから昇格する */
+function cqrEnabled() {
+  return cfgParam("cqr") === "1";
+}
+
+/* 使い捨てセッション (baseSession の clone) で1回だけ実行する。
+ * 本会話のセッション履歴に書き直しのメタ指示を残さないため */
+function promptOneShot(text, timeoutMs) {
+  if (!baseSession || typeof baseSession.clone !== "function") {
+    return promptWithTimeout(text, {}, timeoutMs);
+  }
+  return Promise.resolve(baseSession.clone()).then(function(s) {
+    var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var p = new Promise(function(resolve, reject) {
+      var timer = setTimeout(function() {
+        if (ctrl) { try { ctrl.abort(); } catch (e) { /* noop */ } }
+        reject(new Error("書き直しがタイムアウトしました"));
+      }, timeoutMs || 20000);
+      s.prompt(text, ctrl ? { signal: ctrl.signal } : {}).then(function(r) {
+        clearTimeout(timer); resolve(r);
+      }, function(e) { clearTimeout(timer); reject(e); });
+    });
+    var cleanup = function() { try { if (s.destroy) s.destroy(); } catch (e) { /* noop */ } };
+    return p.then(function(r) { cleanup(); return r; }, function(e) { cleanup(); throw e; });
+  });
+}
+
+function reformulateQuestion(userText) {
+  var instr = "次のフォローアップ質問を、文脈が無くても意味が通る自己完結の質問1文に書き直す。" +
+    "「そのうち」「それら」等の指示語は、直前の呼び出しの絞り込み条件を明示して置き換える。" +
+    "新しい条件を発明しない。書き直した質問文だけを出力する。\n" +
+    "直前の呼び出し: " + lastTurnCall.tool + " " + JSON.stringify(lastTurnCall.args || {}) +
+    "\nフォローアップ質問: " + userText;
+  return promptOneShot(instr, 20000).then(function(raw) {
+    var q = String(raw || "").trim().split("\n")[0].trim();
+    /* ガード: 短すぎ・長すぎ・JSON 断片らしき出力は棄却して元の質問で進む */
+    if (q.length < 8 || q.length > 200 || /[{}\[\]"]/.test(q)) return userText;
+    addMsg("note", "文脈を補って解釈: " + q);
+    return q;
+  }).catch(function() { return userText; });
+}
+
+function agentTurn(userText) {
+  return ensureCatalogFor(userText).then(function() {
+    /* CQR 有効時: 照応表現のあるフォローアップは書き直してから流す。
+     * 書き直しに失敗しても元の質問 + 従来の where 継続で進める */
+    if (cqrEnabled() && lastTurnCall && _anaphoric(userText)) {
+      return reformulateQuestion(userText).then(_agentTurnRun);
+    }
+    return _agentTurnRun(userText);
+  });
+}
+
+function _agentTurnRun(userText) {
+  var prompt = userText;
+  /* ハーネスによるフィールド候補 (カタログ突合) と蓄積観測を添える (逐次参照)。
+   * あくまで参考情報 — tool-first 強制により、これだけで直答はさせない */
+  var fh = fieldHints(userText);
+  var refs = fh.hints.concat(observationHints(userText));
+  var suggestion = fh.suggestion;  // 部分コピー対策のマージに使う
+  /* 文脈参照: 直前ターンのツール呼び出しをプロンプトに添えて参照可能にし、
+   * 照応表現 (「そのうち」等) があれば絞り込みを呼び出し候補にも引き継ぐ */
+  var contWhere = null;
+  if (lastTurnCall) {
+    refs.push("直前の呼び出し: " + lastTurnCall.tool + " " +
+      JSON.stringify(lastTurnCall.args || {}).slice(0, 200));
+    contWhere = continuationWhere(userText);
+    if (contWhere && suggestion) {
+      suggestion.args.where = Object.assign({}, contWhere, suggestion.args.where || {});
+    }
+  }
+  if (refs.length > 0) {
+    // ヒントはプロンプトにのみ添付する (画面には出さない — stats.refs で追跡可能)
+    prompt = userText + "\n参考: " + refs.join(" / ");
+  }
+  var statsRefs = refs;  // 診断用: 添付したヒントを結果に記録する
+  var step = 0;
+  var repairTried = false;
+  var stats = { steps: 0, repaired: false, refs: statsRefs };
+  lastTurnStats = stats;
+  lastTurnAnswer = null;
+  beginTurnSteps();  // 進行ステップの表示先をこのターン用に用意
+  var pendingLesson = null;  // 直前の失敗呼び出し (成功が続けば followup を記録)
+  var turnCalls = [];  // このターンで実行したツール呼び出し
+  var nudges = 0;      // ツール未使用の直答への差し戻し回数 (最大2)
+  var repeatNudged = false;  // 同一呼び出し反復への差し戻しは1回まで
+
+  /* ターン完了をサーバーへライブ記録する (turns.jsonl)。
+   * 外部からチャットの Q → クエリ → A を追跡できるようにする */
+  function logTurn(answerText) {
+    try {
+      fetch("/api/turn-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          q: userText,
+          calls: turnCalls.map(function(c) {
+            return { tool: c.tool, query: describeQuery(c.tool, c.args), ok: c.ok !== false };
+          }),
+          answer: String(answerText || "").slice(0, 300),
+        }),
+      }).catch(function() { /* noop */ });
+    } catch (e) { /* noop */ }
+  }
+
+  function next() {
+    step++;
+    stats.steps = step;
+    var genStep = null;
+    var pre = Promise.resolve(prompt);
+    if (step === 1 && cotEnabled()) {
+      pre = promptWithTimeout(PLAN_INSTR + prompt).then(function(plan) {
+        plan = String(plan).trim().slice(0, 200);
+        stats.plan = plan;
+        return prompt + "\n計画: " + plan + "\n計画に従い、出力形式どおりの JSON を1個出力する。";
+      }).catch(function() { return prompt; });
+    }
+    return pre.then(function(p) {
+      // 二段階フロー: 初手のみ「ツール選択 → 引数生成」に分割 (以降の継続判断は単段)
+      if (step === 1 && flowTwoStep()) {
+        stats.flow = 2;
+        return twoPhaseAction(p, fh.linked, suggestion);
+      }
+      genStep = stepStart(step === 1 ? "応答を生成中" : "結果を検討して次の行動を決定中");
+      return lmPrompt(p);
+    }).then(function(raw) {
+      if (genStep) genStep.done("モデル応答を受信", String(raw).slice(0, 600));
+      var act = parseAction(raw);
+      if (!act || (act.action !== "tool_call" && act.action !== "answer")) {
+        /* 途中で切れた回答 JSON なら本文を救出してそのまま回答にする */
+        var salvaged = salvageAnswer(raw);
+        if (salvaged) {
+          act = { action: "answer", answer: salvaged };
+        }
+      }
+      if (!act || (act.action !== "tool_call" && act.action !== "answer")) {
+        // 壊れた JSON は一度だけ修復を促す ("limit**: 10" 等が実測で発生)
+        if (!repairTried && step < MAX_STEPS) {
+          repairTried = true;
+          stats.repaired = true;
+          addMsg("note", "応答が JSON 形式になっていなかったため、出力し直しを依頼しました");
+          prompt = "直前の出力は JSON として解釈できませんでした。同じ内容を正しい JSON オブジェクト1個" +
+            ' ({"action":"tool_call",...} または {"action":"answer",...}) だけで出力し直す。';
+          return next();
+        }
+        // 修復しても JSON でない応答はそのまま回答として表示
+        lastTurnAnswer = String(raw).trim();
+        addMsg("assistant", lastTurnAnswer);
+        logTurn(lastTurnAnswer);
+        return;
+      }
+      if (act.action === "answer" || !act.tool) {
+        /* ツールを一度も呼ばない直答は強制差し戻す。
+         * 「計画で満足して架空の数値で直答する」失敗 (実測 35/102 件) への
+         * 決定的な対策。2回目も直答なら受け入れる (挨拶等の非データ質問)。
+         * ただし few-shot 例の数値をパロットしている場合はもう1回だけ差し戻す
+         * (ハーネスは自分が作った例の数値を知っているので検出できる)。 */
+        var answerText = act.answer || "";
+        /* {"action":"answer"} だけで本文が無い応答 (実測で発生) は出力し直しを求める */
+        if (answerText === "" && !repairTried && step < MAX_STEPS) {
+          repairTried = true;
+          stats.repaired = true;
+          addMsg("note", "回答本文が空だったため出力し直しを求めました");
+          prompt = '回答の本文を {"action":"answer","answer":"回答本文"} の answer に入れて出力し直す。';
+          return next();
+        }
+        if (answerText === "") answerText = String(raw).trim();
+        if (turnCalls.length === 0 && step < MAX_STEPS) {
+          if (nudges === 0) {
+            nudges++;
+            stats.tool_nudged = nudges;
+            addMsg("note", "ツール未実行の直答だったため差し戻しました");
+            prompt = "回答の前に必ずツールでデータを確認する。" +
+              '{"action":"tool_call","tool":"...","arguments":{...}} の JSON を1個返す。質問: ' + userText;
+            return next();
+          }
+          var parroted = FEWSHOT_NUMBERS.some(function(n) {
+            return answerText.indexOf(n) >= 0;
+          });
+          if (parroted && nudges < 2) {
+            nudges++;
+            stats.tool_nudged = nudges;
+            addMsg("note", "会話例の数値のパロットを検出したため差し戻しました");
+            prompt = "その数値は会話例のものであり実データではない。" +
+              "必ずツールでデータを取得してから答える。tool_call の JSON を1個返す。質問: " + userText;
+            return next();
+          }
+        }
+        /* 次ターンの文脈参照用に、最後に成功した呼び出しを記録する */
+        for (var ti = turnCalls.length - 1; ti >= 0; ti--) {
+          if (turnCalls[ti].ok) {
+            lastTurnCall = { tool: turnCalls[ti].tool, args: turnCalls[ti].args };
+            break;
+          }
+        }
+        lastTurnAnswer = appendQualityNotes(answerText, turnCalls);
+        addMsg("assistant", lastTurnAnswer);
+        if (!isEvalMode()) renderFollowups(turnCalls);
+        logTurn(lastTurnAnswer);
+        return;
+      }
+      if (step >= MAX_STEPS) {
+        addMsg("note", "ステップ上限 (" + MAX_STEPS + ") に達したため打ち切りました。");
+        return;
+      }
+      /* 提案マージ: モデルが呼び出し候補と同じツールを選んだ場合、
+       * 欠けている提案キーを補完する (モデルの指定が優先)。
+       * 「提案の group_by だけコピーして metrics が脱落」する部分コピーが
+       * 実測で発生したため。補正は 表示で可視化される。 */
+      var actArgs = act.arguments || {};
+      if (suggestion && act.tool === suggestion.tool && turnCalls.length === 0) {
+        actArgs = Object.assign({}, suggestion.args, actArgs);
+        /* 文脈継続時: モデルが新しい条件だけを書いても直前の絞り込みを
+         * 失わないよう、where は1段深くマージする (モデルの指定が優先) */
+        if (contWhere && actArgs.where && suggestion.args.where) {
+          actArgs.where = Object.assign({}, suggestion.args.where, actArgs.where);
+        }
+      }
+      var cleanedArgs = cleanArguments(act.tool, actArgs);
+      /* 同一呼び出しの反復ガード: 直前と同じツール+引数は実行せず、
+       * 手元の結果から回答するよう差し戻す (無引数 query の連発が実測で発生) */
+      var prev = turnCalls[turnCalls.length - 1];
+      if (prev && prev.tool === act.tool &&
+          JSON.stringify(prev.args) === JSON.stringify(cleanedArgs)) {
+        if (!repeatNudged && step < MAX_STEPS) {
+          repeatNudged = true;
+          addMsg("note", "同じ呼び出しの繰り返しのため、結果からの回答を促しました");
+          prompt = "直前と同じツール呼び出しが繰り返されています。新しい呼び出しはせず、" +
+            'これまでの結果を使って {"action":"answer","answer":"..."} を返す。';
+          return next();
+        }
+        addMsg("note", "同じ呼び出しの繰り返しが続いたため打ち切りました");
+        return;
+      }
+      var callRec = { tool: act.tool, args: cleanedArgs };
+      turnCalls.push(callRec);
+      return runToolWithCard(act.tool, cleanedArgs, { orig: act.arguments || {} }).then(function(result) {
+        var data = (result && result.structuredContent) || {};
+        callRec.data = data;  // フォローアップ提案の導出に使う
+        /* 単軸集計のグループ数を記憶し、クロス軸提案の適性判断に使う */
+        if (act.tool === "summarize_records" && cleanedArgs.group_by &&
+            cleanedArgs.group_by.length === 1 && !cleanedArgs.where &&
+            typeof data.total_group_count === "number") {
+          observedGroupCounts[cleanedArgs.group_by[0]] = data.total_group_count;
+        }
+        /* リフレクション誘導: 失敗・0件は「見直して再試行」を明示的に促す。
+         * 1回目の呼び出しが外れても2回目で立て直せるようにする (汎用ロジック)。 */
+        var emptyResult = !result.isError && (
+          (Array.isArray(data.rows) && data.rows.length === 0) ||
+          data.total === 0 || data.total_groups === 0 ||
+          (Array.isArray(data.datasets) && data.datasets.length === 0));
+        callRec.ok = !result.isError && !emptyResult;
+        var nudge = "";
+        if (result && result.isError) {
+          var dym = didYouMean(cleanedArgs);
+          nudge = "エラーになった。エラー内容を読み、フィールド名や引数を修正して再試行する。" +
+            (dym.length > 0 ? " もしかして: " + dym.join("、") : "") + "\n";
+          addMsg("note", "エラーのため引数の修正を促しました" +
+            (dym.length > 0 ? " (もしかして: " + dym.join("、") + ")" : ""));
+        } else if (emptyResult) {
+          nudge = "結果は0件だった。フィールド名や値の指定を見直し、別の引数やツールで再試行する。";
+          if (data.hint) {
+            nudge += " ヒント: " + data.hint;
+          }
+          nudge += "\n";
+          addMsg("note", "0件だったため指定の見直しを促しました");
+        }
+        /* 教訓メモリ: 失敗を記録し、続く成功呼び出しを followup として紐づける */
+        if (lessonsEnabled()) {
+          if (result.isError || emptyResult) {
+            pendingLesson = { at: Date.now(), tool: act.tool, args: cleanedArgs,
+                              outcome: result.isError ? "エラー" : "0件", followup: null };
+            recordLesson(pendingLesson);
+          } else if (pendingLesson) {
+            pendingLesson.followup = { tool: act.tool, args: cleanedArgs };
+            recordLesson(pendingLesson);
+            pendingLesson = null;
+          }
+        }
+        /* 観測ストア: 成功した呼び出しから品質観測を蓄積する */
+        if (!result.isError && !emptyResult) {
+          recordObservation(act.tool, cleanedArgs, data);
+        }
+        var digestStr = digestForModel(act.tool, data);
+        var dStep = stepStart("結果の抜粋をモデルへ返送");
+        dStep.done("結果の抜粋をモデルへ返送 (" + digestStr.length + " 字)", digestStr);
+        prompt = "ツール " + act.tool + " の結果(抜粋): " + digestStr +
+          "\n" + nudge + NEXT_INSTR;
+        return next();
+      });
+    }).catch(function(err) {
+      if (genStep) genStep.done("エラー", String(err && err.message || err));
+      addMsg("error", humanizeError(err));
+      logTurn("(エラー) " + (err && err.message || err));
+    });
+  }
+
+  return next();
+}
+
+/* ================= eval モード (?eval) ================= */
+/* tests/evals/cases.json のケースを実 Gemini Nano で順次実行し、
+ * SLM のツール呼び出しを期待値と照合して採点する。
+ * 結果は /api/eval-result 経由で tests/evals/results/latest.json に保存され、
+ * Claude Code 等がファイルを読んでプロンプト改善のループを回せる。 */
+
+function isEvalMode() {
+  return new URLSearchParams(location.search).has("eval");
+}
+
+/* 構成パラメータ (flow / cot 等) を URL クエリから読む */
+function cfgParam(name) {
+  return new URLSearchParams(location.search).get(name);
+}
+
+function evalLimit() {
+  var v = parseInt(new URLSearchParams(location.search).get("eval"), 10);
+  return isNaN(v) || v <= 0 ? 0 : v;
+}
+
+function isWatchMode() {
+  return new URLSearchParams(location.search).has("watch");
+}
+
+/* 期待値照合: 配列=全要素含む / 文字列=部分一致 / オブジェクト=再帰 / 他=完全一致 */
+function argsMatch(expected, actual) {
+  if (expected == null) return true;
+  if (actual == null) return false;
+  return Object.keys(expected).every(function(k) {
+    var e = expected[k], a = actual[k];
+    if (Array.isArray(e)) {
+      return Array.isArray(a) && e.every(function(x) { return a.indexOf(x) >= 0; });
+    }
+    if (typeof e === "object" && e !== null) {
+      return typeof a === "object" && a !== null && argsMatch(e, a);
+    }
+    if (typeof e === "string") return typeof a === "string" && a.indexOf(e) >= 0;
+    return a === e;
+  });
+}
+
+/* watch モード: ハーネス (ページ or eval ケース) の更新を検知したら
+ * 自動でリロードして eval を再実行する。Claude Code 側は
+ * tests/evals/results/latest.json の更新を監視すればループが閉じる。 */
+var _versionEtag = null;
+var _watchTimer = null;
+
+function startWatch() {
+  if (_watchTimer) return;
+  _watchTimer = setInterval(function() {
+    fetch("/api/version").then(function(r) { return r.json(); }).then(function(v) {
+      if (_versionEtag && v.etag && v.etag !== _versionEtag) {
+        clearInterval(_watchTimer);
+        addMsg("note", "ハーネスの更新を検知しました — リロードして eval を再実行します。");
+        setTimeout(function() { location.reload(); }, 800);
+      }
+    }).catch(function() { /* サーバー再起動中などは次回に */ });
+  }, 5000);
+}
+
+/* set=auto: カタログ (list + inspect の結果) から eval ケースを自動生成する。
+ * データセット固有のケース定義が無くても、任意のデータセットで
+ * 「集計/クロス/sum/where/order_by/メタ」の基本能力を測定できる。 */
+var QUALITY_WORDS = ["記入率", "注記", "欠損", "無回答", "未記入", "空欄"];
+
+function autoCases() {
+  var c = catalogInfo[0];
+  if (!c) return [];
+  var id = c.dataset_id;
+  var cases = [];
+  c.groupable.slice(0, 3).forEach(function(f) {
+    cases.push({ prompt: f + "ごとの件数を集計して", category: "集計-基本",
+                 expect: { tool: "summarize_records", args_include: { group_by: [f] } } });
+  });
+  c.groupable.filter(function(f) { return (c.fillRates[f] != null ? c.fillRates[f] : 1) < 0.2; })
+    .slice(0, 2).forEach(function(f) {
+      cases.push({ prompt: f + "別の内訳を教えて", category: "集計-品質注記",
+                   expect: { tool: "summarize_records",
+                             args_include: { group_by: [f] },
+                             answer_includes_any: QUALITY_WORDS } });
+    });
+  if (c.groupable.length >= 2) {
+    cases.push({ prompt: c.groupable[0] + "と" + c.groupable[1] + "のクロス集計をして",
+                 category: "クロス集計",
+                 expect: { tool: "summarize_records",
+                           args_include: { group_by: [c.groupable[0], c.groupable[1]] } } });
+  }
+  cases.push({ prompt: "全部で何件ある?", category: "全体件数",
+               expect: { tool: "summarize_records" } });
+  var agg = c.aggregatable[0];
+  if (agg) {
+    cases.push({ prompt: agg + "の合計は?", category: "sum-avg",
+                 expect: { tool: "summarize_records",
+                           args_include: { metrics: ["sum:" + agg] } } });
+    cases.push({ prompt: c.groupable[0] + "ごとの" + agg + "の合計を出して", category: "sum-avg",
+                 expect: { tool: "summarize_records",
+                           args_include: { group_by: [c.groupable[0]],
+                                           metrics: ["sum:" + agg] } } });
+    cases.push({ prompt: agg + "が多い順に見せて", category: "order_by",
+                 expect: { tool: "query_records",
+                           args_include: { order_by: agg } } });
+  }
+  var wf = Object.keys(c.codeValues)[0];
+  if (wf) {
+    var wv = c.codeValues[wf];
+    var w = {};
+    w[wf] = String(wv).replace(/^[\d\-]+\s*/, "");  // ラベル部分での部分一致を期待
+    cases.push({ prompt: wf + "が「" + wv + "」のレコードを見せて", category: "whereフィルタ",
+                 expect: { tool: "query_records", args_include: { where: w } } });
+  }
+  cases.push({ prompt: "このデータにはどんなフィールドがある?", category: "メタ",
+               expect: { tool: "inspect_dataset" } });
+  return cases;
+}
+
+function runEval() {
+  var pVersion = fetch("/api/version").then(function(r) { return r.json(); })
+    .then(function(v) { _versionEtag = v.etag; })
+    .catch(function() {});
+  pVersion.then(function() {
+    var setName = new URLSearchParams(location.search).get("set");
+    if (setName === "auto") {
+      addMsg("note", "eval ケースをカタログから自動生成します (set=auto)");
+      /* set=auto はカタログ (inspect 結果) からケースを生成するため、
+       * 選択 UI を待たず先頭のデータセットを自動選択して inspect する。
+       * (通常セットは agentTurn 内の遅延 inspect で足りるが、auto は
+       * ケース生成自体がカタログを必要とする) */
+      var ready = Promise.resolve();
+      if (catalogInfo.length === 0 && datasetList.length > 0) {
+        addMsg("note", "eval モード: データセット「" + datasetList[0].dataset_id +
+          "」を自動選択して構造を取得します");
+        ready = inspectAndStartSession(datasetList[0]);
+      }
+      return ready.then(function() {
+        return { ok: true, json: function() { return Promise.resolve({ cases: autoCases() }); } };
+      });
+    }
+    return fetch("/api/eval-cases" + (setName ? "?set=" + encodeURIComponent(setName) : ""));
+  }).then(function(r) {
+    return r.json().then(function(data) {
+      if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+      return data.cases || [];
+    });
+  }).then(function(cases) {
+    if (cases.length === 0) throw new Error("ケースが空です");
+    // 実行中のスタックからも復旧できるよう、watch は eval 開始時から監視する
+    // (ハーネスが更新されたらランを打ち切ってリロード → 新版で再実行)
+    if (isWatchMode()) startWatch();
+    var limit = evalLimit();
+    if (limit && limit < cases.length) {
+      addMsg("note", "eval モード: 先頭 " + limit + " / " + cases.length + " ケースを実行します。");
+      cases = cases.slice(0, limit);
+    } else {
+      addMsg("note", "eval モード: " + cases.length + " ケースを実行します。");
+    }
+    setBusy(true);
+
+    return evalCases(cases, null).then(function(summary) {
+      window.__EVAL_RESULT__ = summary;
+      setBusy(false);
+      addMsg("note", "eval 完了: " + summary.passed + "/" + summary.total + " PASS" +
+        " (初回一致 " + summary.first_try_passed + ")");
+      return postEvalResult(summary);
+    });
+  }).catch(function(err) {
+    setBusy(false);
+    addMsg("error", "eval を実行できません: " + (err && err.message || err));
+    if (isWatchMode()) startWatch();
+  });
+}
+
+function postEvalResult(payload) {
+  return fetch("/api/eval-result", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).then(function() {
+    addMsg("note", "結果を tests/evals/results/latest.json に保存しました。");
+  }).catch(function() {
+    addMsg("note", "(結果を保存できませんでしたが、window.__EVAL_RESULT__ で参照できます)");
+  }).then(function() {
+    if (isWatchMode()) {
+      addMsg("note", "watch モード: ハーネスの更新を監視中… (更新されると自動で再実行)");
+      startWatch();
+    }
+  });
+}
+
+/* ケース集を1周実行してサマリーを返す (保存や watch は呼び出し側の責務) */
+function evalCases(cases, label) {
+    var results = [];
+    var chain = Promise.resolve();
+    cases.forEach(function(cs, i) {
+      chain = chain.then(function() {
+        addMsg("user", "[eval " + (label ? label + " " : "") +
+          (i + 1) + "/" + cases.length + "] " + cs.prompt);
+        var CASE_TIMEOUT_MS = 240000;
+        var attempt = 0;
+        // clone でケース間の履歴持ち越しを防ぐ (再 create より高速)
+        function runCase() {
+          attempt++;
+          var mark = toolCallLog.length;
+          return freshSession().then(function() {
+            // ケース単位の上限。超えたら FAIL 記録して次のケースへ進む
+            return Promise.race([
+              agentTurn(cs.prompt).then(function() { return false; }),
+              new Promise(function(resolve) {
+                setTimeout(function() { resolve(true); }, CASE_TIMEOUT_MS);
+              }),
+            ]);
+          }).then(function(t) {
+            var calls = toolCallLog.slice(mark);
+            var answer = lastTurnAnswer || "";
+            /* まれにモデルが空応答で終わる (呼び出しも回答も無い)。
+             * 単発の揺らぎなので1回だけケースを再試行する */
+            if (!t && attempt < 2 && calls.length === 0 && answer === "") {
+              addMsg("note", "空応答のためケースを再試行します");
+              return runCase();
+            }
+            return { timedOut: t, calls: calls, answer: answer };
+          });
+        }
+        return runCase().then(function(out) {
+          var timedOut = out.timedOut;
+          if (timedOut) {
+            addMsg("error", "[eval] ケースがタイムアウトしました (" +
+              Math.round(CASE_TIMEOUT_MS / 1000) + "s) — 次へ進みます");
+          }
+          var calls = out.calls;
+          var answer = out.answer;
+          var exp = cs.expect || {};
+          function matchCall(c) {
+            var toolOk = !exp.tool ||
+              (Array.isArray(exp.tool) ? exp.tool.indexOf(c.name) >= 0 : c.name === exp.tool);
+            if (!toolOk) return false;
+            /* args_any: 複数の妥当解を許容 (q 検索でも where 部分一致でも正解、等) */
+            if (Array.isArray(exp.args_any)) {
+              return exp.args_any.some(function(a) { return argsMatch(a, c.arguments); });
+            }
+            return argsMatch(exp.args_include, c.arguments);
+          }
+          var callOk = calls.some(matchCall);
+          /* answer_includes_any: 回答文の品質条件 (低記入率フィールド使用時の
+           * 注記など)。いずれかの語を含めば OK。 */
+          var answerOk = !exp.answer_includes_any ||
+            exp.answer_includes_any.some(function(s) { return answer.indexOf(s) >= 0; });
+          var pass = callOk && answerOk;
+          var firstTry = calls.length > 0 && matchCall(calls[0]) && answerOk;
+          var rec = { prompt: cs.prompt, category: cs.category || "その他",
+                      expect: exp, calls: calls, answer: answer,
+                      pass: pass, first_try: firstTry, stats: lastTurnStats,
+                      schema_tier: _schemaTier,
+                      context_usage: sessionUsageRatio(session) };
+          if (timedOut) rec.timeout = true;
+          results.push(rec);
+          addMsg(pass ? "note" : "error",
+            "[eval] " + (pass ? "PASS" : "FAIL") + " — " + cs.prompt);
+        });
+      });
+    });
+    return chain.then(function() {
+      var passed = results.filter(function(r) { return r.pass; }).length;
+      var firstTryPassed = results.filter(function(r) { return r.first_try; }).length;
+      var stepsSum = 0;
+      results.forEach(function(r) { stepsSum += (r.stats && r.stats.steps) || 0; });
+      /* 類型別の集計 — どの能力が退行したかを critic が特定できるようにする */
+      var cats = {};
+      results.forEach(function(r) {
+        var cat = r.category || "その他";
+        if (!cats[cat]) cats[cat] = { total: 0, passed: 0, first_try: 0 };
+        cats[cat].total++;
+        if (r.pass) cats[cat].passed++;
+        if (r.first_try) cats[cat].first_try++;
+      });
+      return {
+        total: results.length,
+        passed: passed,
+        accuracy: results.length ? passed / results.length : 0,
+        first_try_passed: firstTryPassed,
+        avg_steps: results.length ? Math.round(stepsSum / results.length * 100) / 100 : 0,
+        categories: cats,
+        harness_version: _versionEtag,
+        cases: results,
+      };
+    });
+}
+
+/* ================= UI 配線 ================= */
+
+/* 例文チップとプレースホルダは catalog (実フィールド名) から生成する */
+/* ── フォローアップ提案 ──
+ * 直前のツール結果と inspect 由来のカタログ (groupable/aggregatable/記入率) から
+ * 「次に聞くと良さそうな質問」を導出する。データセット固有の知識は使わない。 */
+/* 内訳・クロス軸に適した次元フィールド。role が分かる場合は dim のみ
+ * (手続名のような attr はほぼ一意でクロス集計が無意味になる実測があった) */
+function dimCandidates(c) {
+  return (c.groupable || []).filter(function(f) {
+    var role = c.roles && c.roles[f];
+    return !role || role === "dim";
+  });
+}
+
+function followupSuggestions(calls) {
+  var c = catalogInfo[0];
+  if (!c) return [];
+  var last = null;
+  for (var i = (calls || []).length - 1; i >= 0; i--) {
+    if (calls[i].ok !== false && calls[i].tool !== "list_datasets") { last = calls[i]; break; }
+  }
+  if (!last) return [];
+  var fr = function(f) { return c.fillRates && c.fillRates[f] != null ? c.fillRates[f] : 1; };
+  /* 記入率の高い順の次元・数値フィールド (疎なフィールドは提案しない) */
+  var dims = dimCandidates(c).filter(function(f) { return fr(f) >= 0.5; })
+    .sort(function(a, b) { return fr(b) - fr(a); });
+  var measures = (c.aggregatable || []).filter(function(f) { return fr(f) >= 0.4; });
+  var qs = [];
+  var gb = (last.args && last.args.group_by) || [];
+  var data = last.data || {};
+
+  if (last.tool === "summarize_records" && gb.length > 0) {
+    /* 最大グループへのドリルダウン (結果の先頭行 = 件数最大) */
+    var topVal = null;
+    if (Array.isArray(data.columns) && Array.isArray(data.rows) && data.rows.length > 0) {
+      var gi = data.columns.indexOf(gb[0]);
+      if (gi >= 0) topVal = data.rows[0][gi];
+    }
+    if (topVal != null && String(topVal) !== "" && String(topVal).length <= 30) {
+      qs.push(gb[0] + "が「" + String(topVal) + "」のものを一覧して");
+    }
+    /* クロス軸はカーディナリティが低いと確信できるフィールドのみ提案する:
+     * codelist 有り (列挙型で確定) か、単軸集計の実測グループ数が 50 以下 */
+    var second = dims.filter(function(f) {
+      if (gb.indexOf(f) >= 0) return false;
+      if (c.codelists && c.codelists[f]) return true;
+      return observedGroupCounts[f] != null && observedGroupCounts[f] <= 50;
+    })[0];
+    if (second) qs.push(gb[0] + "と" + second + "のクロス集計をして");
+    if (measures[0]) qs.push(gb[0] + "ごとの" + measures[0] + "の合計は?");
+  } else if (last.tool === "query_records") {
+    var whereFields = Object.keys((last.args && last.args.where) || {});
+    var dim = dims.filter(function(f) { return whereFields.indexOf(f) < 0; })[0];
+    if (dim) qs.push("この条件で" + dim + "ごとに集計して");
+    if (whereFields.length === 0 && dims[0]) qs.push(dims[0] + "ごとの件数を集計して");
+    if (measures[0]) qs.push(measures[0] + "が多い順に一覧して");
+  } else if (last.tool === "inspect_dataset") {
+    if (dims[0]) qs.push(dims[0] + "ごとの件数を集計して");
+    if (dims[1]) qs.push(dims[1] + "の内訳は?");
+    if (measures[0]) qs.push(measures[0] + "の合計は?");
+  }
+  return qs.slice(0, 3);
+}
+
+/* 「次の一手」チップを消し、隠していた例チップの表示を戻す (セッション切替・復元時) */
+function clearFollowups() {
+  var container = document.getElementById("followups-container");
+  if (container) container.innerHTML = "";
+  var examplesEl = document.getElementById("examples");
+  if (examplesEl) examplesEl.style.display = "";
+}
+
+function renderFollowups(calls) {
+  var qs = followupSuggestions(calls);
+  if (qs.length === 0) return;
+  var container = document.getElementById("followups-container");
+  if (!container) return;
+
+  // 次の一手が表示されるときは、例チップは非表示にする
+  var examplesEl = document.getElementById("examples");
+  if (examplesEl) examplesEl.style.display = "none";
+
+  container.innerHTML = "";
+  var wrap = document.createElement("div");
+  wrap.className = "followups";
+  var label = document.createElement("span");
+  label.className = "fu-label";
+  label.textContent = "次の一手:";
+  wrap.appendChild(label);
+  qs.forEach(function(text) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = text;
+    btn.addEventListener("click", function() {
+      inputEl.value = text;
+      inputEl.focus();
+    });
+    wrap.appendChild(btn);
+  });
+  container.appendChild(wrap);
+  syncChipDisabled();  // 生成直後に現在の送信可否を反映する
+}
+
+function exampleQuestions() {
+  var qs = [];
+  var c = catalogInfo[0];
+  /* 遅延 inspect モードの初期状態: データセットの一覧・タイトルから例を作る */
+  if (!c && datasetList.length > 1) {
+    qs.push("どんなデータセットがある?");
+    datasetList.slice(0, 2).forEach(function(d) {
+      qs.push(String(d.title || d.dataset_id).slice(0, 14) + "のデータは?");
+    });
+    return qs.slice(0, 3);
+  }
+  var dims = c ? dimCandidates(c) : [];
+  if (dims[0]) qs.push(dims[0] + "ごとの件数を集計して");
+  /* 「内訳」の例は codelist を持つ列挙型の次元から選ぶ
+   * (法令名のような高カーディナリティ次元は例として不適) */
+  var enumDim = dims.filter(function(f) {
+    return f !== dims[0] && c.codelists && c.codelists[f];
+  })[0];
+  if (enumDim) qs.push(enumDim + "の内訳は?");
+  var m = c && (c.aggregatable || [])[0];
+  if (m) qs.push(m + "が多い順に一覧して");
+  if (qs.length < 3) qs.push("全部で何件ある?");
+  return qs.slice(0, 3);
+}
+
+function buildExampleChips() {
+  var examplesEl = document.getElementById("examples");
+  examplesEl.innerHTML = "";
+  exampleQuestions().forEach(function(text) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = text;
+    btn.addEventListener("click", function() {
+      inputEl.value = text;
+      inputEl.focus();
+    });
+    examplesEl.appendChild(btn);
+  });
+  syncChipDisabled();  // 生成直後に現在の送信可否を反映する
+}
+
+function defaultPlaceholder() {
+  var qs = exampleQuestions();
+  return qs.length ? "例: " + qs[0] : "データについて質問してください";
+}
+
+function setBusy(b) {
+  busy = b;
+  sendBtn.disabled = b || !lmReady;
+  inputEl.disabled = b;
+}
+
+/* 送信ボタンの無効状態を例・「次の一手」チップに同期する (視覚一貫性)。
+ * sendBtn.disabled は busy 以外 (モデルの準備状態等) からも変わるため、
+ * 変更箇所を個別に追わず、属性の変化を監視して一括反映する */
+function syncChipDisabled() {
+  var dis = sendBtn.disabled;
+  document.querySelectorAll("#examples button, .followups button").forEach(function(b) {
+    b.disabled = dis;
+  });
+}
+new MutationObserver(syncChipDisabled)
+  .observe(sendBtn, { attributes: true, attributeFilter: ["disabled"] });
+
+document.getElementById("new-session").addEventListener("click", function() {
+  if (busy) return;
+  startNewSession(true);
+});
+
+/* ページ版の鮮度チェック: タブへフォーカスが戻るたびに /api/version を確認し、
+ * ハーネスが更新されていたら再読み込みバナーを出す (古い版を触り続ける事故防止) */
+var _loadEtag = null;
+fetch("/api/version").then(function(r) { return r.json(); })
+  .then(function(v) { _loadEtag = v.etag; }).catch(function() {});
+window.addEventListener("focus", function() {
+  if (!_loadEtag || isEvalMode()) return;
+  fetch("/api/version").then(function(r) { return r.json(); }).then(function(v) {
+    if (v.etag && v.etag !== _loadEtag) showUpdateBanner();
+  }).catch(function() {});
+});
+function showUpdateBanner() {
+  if (document.getElementById("update-banner")) return;
+  var bar = document.createElement("div");
+  bar.id = "update-banner";
+  var label = document.createElement("span");
+  label.textContent = "新しいバージョンがあります";
+  var btn = document.createElement("button");
+  btn.textContent = "再読み込み";
+  btn.className = "primary";
+  btn.addEventListener("click", function() { location.reload(); });
+  bar.appendChild(label);
+  bar.appendChild(btn);
+  document.body.insertBefore(bar, document.getElementById("layout"));
+}
+
+/* サイドバー開閉 (状態を保存)。狭い画面ではオーバーレイになるため、
+ * 初回は閉じた状態で開始し、✕・背景タップ・Esc・セッション選択で閉じられる */
+var _narrowMq = window.matchMedia("(max-width: 900px)");
+function applySidebarState() {
+  document.body.classList.toggle("sidebar-closed",
+    lsGet("apcli-preview:sidebar-closed") === true);
+}
+function setSidebarClosed(closed) {
+  lsSet("apcli-preview:sidebar-closed", closed);
+  applySidebarState();
+}
+document.getElementById("toggle-sidebar").addEventListener("click", function() {
+  setSidebarClosed(!(lsGet("apcli-preview:sidebar-closed") === true));
+});
+document.getElementById("close-sidebar").addEventListener("click", function() {
+  setSidebarClosed(true);
+});
+document.getElementById("sidebar-backdrop").addEventListener("click", function() {
+  setSidebarClosed(true);
+});
+window.addEventListener("keydown", function(e) {
+  if (e.key === "Escape" && _narrowMq.matches &&
+      lsGet("apcli-preview:sidebar-closed") !== true) {
+    setSidebarClosed(true);
+  }
+});
+/* 狭い画面でセッションを選択・作成したらドロワーを閉じる */
+function closeSidebarIfNarrow() {
+  if (_narrowMq.matches) setSidebarClosed(true);
+}
+document.getElementById("session-list").addEventListener("click", function(e) {
+  if (e.target.closest && e.target.closest(".session-open")) closeSidebarIfNarrow();
+});
+document.getElementById("new-session").addEventListener("click", closeSidebarIfNarrow);
+if (lsGet("apcli-preview:sidebar-closed") === null && _narrowMq.matches) {
+  lsSet("apcli-preview:sidebar-closed", true);
+}
+applySidebarState();
+
+document.getElementById("composer").addEventListener("submit", function(e) {
+  e.preventDefault();
+  var text = inputEl.value.trim();
+  if (!text || busy || !lmReady) return;
+  inputEl.value = "";
+  addMsg("user", text);
+  setBusy(true);
+  freshSession()
+    .then(function() { return agentTurn(text); })
+    .catch(function(err) {
+      addMsg("error", humanizeError(err));
+    })
+    .then(function() { setBusy(false); inputEl.focus(); });
+});
+
+inputEl.addEventListener("keydown", function(e) {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    document.getElementById("composer").requestSubmit();
+  }
+});
+
+/* ================= セットアップ案内 ================= */
+
+function showSetupPanel() {
+  var el = document.createElement("div");
+  el.id = "setup";
+  var isBrowserEdge = isEdge();
+  el.innerHTML = isBrowserEdge ?
+    "<h2>Microsoft Edge の Prompt API が利用できません</h2>" +
+    "<ol>" +
+    "<li>デスクトップ版 Microsoft Edge 131 以降を使う</li>" +
+    "<li><code>edge://flags</code> で「Prompt API for on-device language model」を <b>Enabled</b> にする</li>" +
+    "<li>Edge を再起動する (初回利用時にモデル (Phi-mini) がダウンロードされます)</li>" +
+    "</ol>" +
+    "<div>詳細: <a href='https://learn.microsoft.com/ja-jp/microsoft-edge/web-platform/prompt-api' target='_blank'>Microsoft Edge の Prompt API</a></div>"
+    :
+    "<h2>Chrome の内蔵 AI (Prompt API) が利用できません</h2>" +
+    "<ol>" +
+    "<li>デスクトップ版 Chrome 138 以降を使う</li>" +
+    "<li><code>chrome://flags/#prompt-api-for-gemini-nano</code> を <b>Enabled</b> にする</li>" +
+    "<li><code>chrome://flags/#optimization-guide-on-device-model</code> を <b>Enabled BypassPerfRequirement</b> にする</li>" +
+    "<li>Chrome を再起動する (初回利用時にモデルがダウンロードされます。" +
+    "<code>chrome://components</code> の Optimization Guide On Device Model で状態確認可)</li>" +
+    "</ol>" +
+    "<div>目安のハードウェア要件: 空きストレージ 22GB / VRAM 4GB 超。詳細: " +
+    "developer.chrome.com/docs/ai/prompt-api</div>";
+  chatEl.appendChild(el);
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+/* ================= 初期化 ================= */
+
+function buildSystemPrompt(desc) {
+  /* Gemini Nano には ## 区切りによるセクション分けが特に有効
+   * (ML Kit "Prompt design for Gemini Nano" の推奨に従う) */
+  var lines = [
+    "あなたはデータ分析アシスタント。提供されたデータセットをツールで検索・集計し、日本語で答える。",
+    "",
+    "## 出力形式",
+    "応答は必ず JSON オブジェクト1個のみ。説明文・コードフェンスは禁止。",
+    'ツールを呼ぶ: {"action":"tool_call","tool":"<name>","arguments":{...}}',
+    '最終回答: {"action":"answer","answer":"<回答>"}',
+    "",
+    "## ツール (* は必須引数)",
+  ];
+  (desc.tools || []).forEach(function(t) {
+    var props = (t.parameters && t.parameters.properties) || {};
+    var req = (t.parameters && t.parameters.required) || [];
+    var ps = Object.keys(props).map(function(k) {
+      return k + (req.indexOf(k) >= 0 ? "*" : "") + ":" + (props[k].type || "");
+    }).join(", ");
+    lines.push("- " + t.name + "(" + ps + ") — " + t.description);
+  });
+  lines.push("");
+  lines.push("## ルール");
+  lines.push('where 構文: 文字列=部分一致, 配列=IN, {"$gte":n}/{"$lte":n}=範囲。');
+  var aggExample = catalogInfo[0] && catalogInfo[0].aggregatable[0];
+  lines.push('metrics 例: ["count"]' +
+    (aggExample ? ', ["sum:' + aggExample + '"]' : "") +
+    "。group_by はフィールド名の JSON 配列。");
+  lines.push("- データセットの構造は「## データセット」に記載済み。通常は summarize_records (集計) か query_records (検索) を 1 回呼べば答えられる。");
+  lines.push("- 対象のデータセットが不明なとき・複数候補から選ぶときは、まず list_datasets で探し、必要に応じて inspect_dataset で構造と品質を確認してから呼ぶ。");
+  lines.push("- 「◯◯ごと」「◯◯別」「内訳」「分布」「割合」はすべて集計 = summarize_records + group_by。group_by に必ずそのフィールド名を入れる (空だと全体合計のみ)。");
+  lines.push("- 「AとBで集計」「AごとにBの内訳」は group_by に A と B の両方を入れる。");
+  lines.push("- metrics に入れられるのは count / sum:数値フィールド / avg:数値フィールド のみ。フィールド名単体を metrics に入れるのは禁止。having は count 等の集計値の絞り込み専用。");
+  lines.push("- count はレコードの数。「◯◯件数の合計」のように数値フィールドの総和を聞かれたら metrics に [\"sum:◯◯件数\"] を使う。");
+  lines.push("- 「AごとのBの合計/平均」は group_by:[\"A\"] と metrics:[\"sum:B\"] の両方を1回の呼び出しに指定する。");
+  lines.push("- q はレコードの値を探すキーワード用。フィールド名を q や search_fields に入れるのは禁止。");
+  lines.push("- group_by / where のフィールド名は「## データセット」の一覧の名前をそのまま使う。記入率が低いフィールドを使ったときは回答に注記する。");
+  lines.push("- 質問に「参考: 呼び出し候補」が付いている場合は原則それに従って呼び出す。質問に合わないと判断した部分だけ修正してよい。");
+  lines.push("- 数値は必ずツール結果の値をそのまま引用する。結果に無い情報を述べるのは禁止。");
+  lines.push("- データについての質問には必ずツールを呼んでから答える。会話例に出てくる数値を実データとして使うのは禁止。");
+  lines.push("- ツールの使い方や手順を説明する回答は禁止。説明する代わりに、実際に tool_call の JSON を返して実行する。");
+  if (lessonsEnabled()) {
+    var ll = lessonLines(5);
+    if (ll.length > 0) {
+      lines.push("");
+      lines.push("## 過去の教訓 (この環境での実績)");
+      ll.forEach(function(s) { lines.push("- " + s); });
+    }
+  }
+  lines.push("");
+  lines.push("## データセット");
+  catalogInfo.forEach(function(c) {
+    lines.push("");
+    var head = 'データセット "' + c.dataset_id + '"';
+    if (c.title) head += " (" + c.title + (c.record_count ? "、" + c.record_count + "件" : "") + ")";
+    else if (c.record_count) head += " (" + c.record_count + "件)";
+    lines.push(head + " のフィールド:");
+    if (c.quality) {
+      var q = c.quality;
+      lines.push("フィールド記入率の概況: ほぼ完全 " + (q.fully_populated || 0) +
+        " / 高 " + (q.mostly_populated || 0) + " / 疎 " + (q.sparse || 0) + " 項目");
+    }
+    c.fields.forEach(function(f) { lines.push(f); });
+  });
+  /* 未 inspect のデータセットは id + タイトルの一覧だけ載せる (多データセット時)。
+   * 構造が必要になれば inspect_dataset で確認できることを SLM に示す */
+  var inspected = {};
+  catalogInfo.forEach(function(c) { inspected[c.dataset_id] = true; });
+  var others = datasetList.filter(function(d) { return !inspected[d.dataset_id]; });
+  if (others.length > 0) {
+    lines.push("");
+    lines.push("他のデータセット (構造が必要なら inspect_dataset で確認):");
+    others.slice(0, 30).forEach(function(d) {
+      lines.push("- " + d.dataset_id + ": " + String(d.title || "").slice(0, 40));
+    });
+    if (others.length > 30) {
+      lines.push("… 他 " + (others.length - 30) + " 件 (list_datasets で確認)");
+    }
+  } else if (catalogInfo.length === 0 && datasetIds.length > 0) {
+    lines.push("利用可能な dataset_id: " + datasetIds.join(", "));
+  }
+  return lines.join("\n");
+}
+
+/* inspect_dataset の結果から SLM 向けのフィールド表 (品質タグ付き) を作る */
+function extractCatalogEntry(info, inspectData) {
+  var entry = {
+    dataset_id: info.dataset_id,
+    title: info.title,
+    record_count: info.record_count,
+    fields: [], groupable: [], aggregatable: [],
+  };
+  if (!inspectData || !Array.isArray(inspectData.columns) || !Array.isArray(inspectData.rows)) {
+    return entry;
+  }
+  var idx = {};
+  inspectData.columns.forEach(function(c, i) { idx[c] = i; });
+  function v(row, key) {
+    var i = idx[key];
+    return i == null ? null : row[i];  // 末尾 null は行から省略されている
+  }
+  entry.allFields = [];
+  entry.fillRates = {};
+  entry.codeValues = {};
+  entry.codelists = {};
+  entry.roles = {};
+  entry.descs = {};
+  inspectData.rows.forEach(function(row) {
+    var id = v(row, "id");
+    if (!id) return;
+    entry.allFields.push(id);
+    var tags = [];
+    var role = v(row, "role");
+    if (role) { tags.push(role); entry.roles[id] = role; }
+    /* desc はハーネス側の照合語彙としてのみ保持する (フィールドヒント用)。
+     * dataset.yaml 由来の自由記述のためプロンプトには一切出さない (信頼境界) */
+    var dsc = v(row, "desc");
+    if (typeof dsc === "string" && dsc) entry.descs[id] = dsc;
+    if (v(row, "groupable")) { tags.push("group_by可"); entry.groupable.push(id); }
+    if (v(row, "aggregatable")) { tags.push("sum/avg可"); entry.aggregatable.push(id); }
+    if (v(row, "multi_value")) tags.push("複数値");
+    var fr = v(row, "fill_rate");
+    if (typeof fr === "number") entry.fillRates[id] = fr;
+    if (typeof fr === "number" && fr < 0.9) tags.push("記入率" + Math.round(fr * 100) + "%");
+    var line = id + " [" + tags.join(",") + "]";
+    /* codelist (コード値) は where の値指定と結果解釈の生命線なので必ず見せる */
+    var cl = v(row, "codelist");
+    if (Array.isArray(cl) && cl.length > 0) {
+      entry.codeValues[id] = cl.length > 1 ? cl[1] : cl[0];  // few-shot の where 例に使う
+      entry.codelists[id] = cl.slice(0, 20);                 // 質問との値マッチングに使う
+      var vals = cl.slice(0, 6).join("|");
+      if (vals.length > 80) vals = vals.slice(0, 80) + "…";
+      else if (cl.length > 6) vals += "|…";
+      line += " 値:[" + vals + "]";
+    }
+    entry.fields.push(line);
+  });
+  if (inspectData.quality_summary) entry.quality = inspectData.quality_summary;
+  return entry;
+}
+
+/* list_datasets UI を表示してユーザーがデータセットを選択するまで待つ。
+ * ユーザーが選択したら inspectAndStartSession() がコールされる (list_datasets.html の postMessage) */
+function runDiscovery() {
+  var box = document.createElement("details");
+  box.className = "discovery";
+  var boxSummary = document.createElement("summary");
+  boxSummary.innerHTML = ICONS.search + "<span></span>";
+  var boxLabel = boxSummary.querySelector("span");
+  boxLabel.textContent = "データセットを選択してください…";
+  box.appendChild(boxSummary);
+  chatEl.appendChild(box);
+  box.open = true;
+
+  return runToolWithCard("list_datasets", {}, { container: box }).then(function(result) {
+    var data = result.structuredContent || {};
+    datasetList = (data.datasets || []).filter(function(d) { return d.dataset_id; });
+    return datasetList;
+  }).catch(function() { return []; }).then(function(datasets) {
+    if (datasets.length === 0) {
+      addMsg("error", "利用可能なデータセットがありません");
+    }
+  });
+}
+
+/* list_datasets UI からのデータセット選択で呼ばれる。
+ * inspect_dataset を実行して、その結果でセッション初期化 → 会話開始 */
+function inspectAndStartSession(dataset) {
+  var key = "apcli-preview:catalog4:" + dataset.dataset_id;
+  busy = true;
+  return apiCall("inspect_dataset", { dataset_id: dataset.dataset_id })
+    .then(function(result) {
+      var entry = extractCatalogEntry(dataset, result.structuredContent || null);
+      lsSet(key, { at: Date.now(), entry: entry });
+      catalogInfo = [entry];
+      finishDiscovery([entry], [dataset]);
+    })
+    .catch(function(err) {
+      var cached = lsGet(key);
+      if (cached && cached.entry) {
+        catalogInfo = [cached.entry];
+        finishDiscovery([cached.entry], [dataset]);
+      } else {
+        addMsg("error", "データセット「" + dataset.dataset_id + "」の情報を取得できませんでした");
+      }
+    })
+    .then(function() { busy = false; });
+}
+
+function initWithoutInspect(datasets) {
+  return Promise.resolve([]);
+}
+
+function finishDiscovery(entries, datasets) {
+  catalogInfo = entries;
+  datasetIds = datasets.map(function(d) { return d.dataset_id; });
+  if (datasetIds.length > 0) {
+    ARGS_SCHEMA.properties.dataset_id.enum = datasetIds;
+  }
+  systemPrompt = buildSystemPrompt(describeData || {});
+  buildExampleChips();
+  inputEl.placeholder = defaultPlaceholder();
+  if (lmReady) resetSession(null);
+}
+
+/* ================= LLM 応答からツール呼び出しを抽出 ================= */
+/**
+ * LLM 応答から JSON フォーマットのツール呼び出しを抽出
+ * 想定フォーマット (systemPrompt 指定):
+ *   {"action":"tool_call","tool":"<name>","arguments":{...}}
+ * または従来形式:
+ *   {"tool": "tool_name", "args": {...}}
+ */
+function extractToolCallFromResponse(text) {
+  if (!text || typeof text !== "string") return null;
+
+  // JSON ブロック（```json ... ```）から抽出
+  var jsonMatch = text.match(/```json\n?([\s\S]*?)\n?```/);
+  if (jsonMatch) {
+    try {
+      var parsed = JSON.parse(jsonMatch[1]);
+      if (parsed.action === "tool_call" && parsed.tool && TOOL_TEMPLATES[parsed.tool]) {
+        return { tool: parsed.tool, args: parsed.arguments || {} };
+      }
+    } catch (e) { /* JSON parse error */ }
+  }
+
+  // インライン JSON から抽出（{...}）
+  var jsonStart = text.indexOf("{");
+  if (jsonStart >= 0) {
+    var jsonStr = text.substring(jsonStart);
+    try {
+      var parsed = JSON.parse(jsonStr);
+      // systemPrompt フォーマット
+      if (parsed.action === "tool_call" && parsed.tool && TOOL_TEMPLATES[parsed.tool]) {
+        return { tool: parsed.tool, args: parsed.arguments || {} };
+      }
+      // 従来形式
+      if (parsed.tool && TOOL_TEMPLATES[parsed.tool]) {
+        return { tool: parsed.tool, args: parsed.args || {} };
+      }
+    } catch (e) { /* JSON parse error */ }
+  }
+
+  return null;
+}
+
+
+function init() {
+  fetch("/api/describe").then(function(r) { return r.json(); }).then(function(desc) {
+    describeData = desc;
+    (describeData.tools || []).forEach(function(t) {
+      var set = {};
+      Object.keys((t.parameters && t.parameters.properties) || {}).forEach(function(k) {
+        set[k] = true;
+      });
+      TOOL_PARAMS[t.name] = set;
+    });
+    return startNewSession(true);  // セッション開始 = 探索フローを実行
+  }).then(function() {
+    LM = lmNamespace();
+    if (!LM) {
+      setStatus("内蔵 AI: 利用不可", "err");
+      showSetupPanel();
+      return;
+    }
+    return lmAvailability(LM).then(function(avail) {
+      if (avail === "unavailable") {
+        setStatus("内蔵 AI: 利用不可", "err");
+        showSetupPanel();
+        return;
+      }
+      if (avail === "available") {
+        lmReady = true;
+        sendBtn.disabled = false;
+        setStatus("内蔵 AI: 利用可能 (Gemini Nano)", "ok");
+
+        // PreviewSession を初期化
+        session = new PreviewSession();
+        return session.init().then(function() {
+          if (isEvalMode()) { runEval(); return; }  // 自動実行 (watch ループ用)
+          inputEl.focus();
+        });
+      }
+      // downloadable / downloading — 準備完了までチャットは開放しない。
+      // ダウンロードはバナーのボタン (ユーザー操作) からのみ開始する。
+      setStatus(avail === "downloading" ? "内蔵 AI: ダウンロード中" : "内蔵 AI: 要ダウンロード", "warn");
+      inputEl.placeholder = "モデルのダウンロード後に利用できます (上のバナーから開始)";
+      showDownloadBanner(avail);
+    });
+  }).catch(function(err) {
+    setStatus("初期化できませんでした", "err");
+    addMsg("error", "初期化できませんでした: " + (err && err.message || err));
+  });
+}
+
+init();
+</script>
+</body>
+</html>

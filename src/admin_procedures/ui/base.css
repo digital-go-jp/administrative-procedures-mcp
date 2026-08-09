@@ -1,0 +1,568 @@
+/* base.css — MCP Apps 共通スタイル (デジタル庁デザインシステム DADS 準拠) */
+/* @see https://design.digital.go.jp/dads/ */
+/* @see https://www.digital.go.jp/resources/dashboard-guidebook §4.3 */
+
+/* ------------------------------------------------------------------
+ * DADS デザイントークン (@digital-go-jp/design-tokens v2.0.1 より抜粋)
+ * MCP Apps は外部リソースを読めないため、使用するトークンのみ埋め込む。
+ * 値は改変しないこと。改変すると DADS 準拠を主張できなくなる。
+ * @see https://github.com/digital-go-jp/design-tokens
+ * ------------------------------------------------------------------ */
+:root {
+  /* Neutral (Solid Gray) */
+  --dads-white: #ffffff;
+  --dads-gray-50: #f2f2f2;
+  --dads-gray-100: #e6e6e6;
+  --dads-gray-200: #cccccc;
+  --dads-gray-400: #999999;
+  --dads-gray-536: #767676;  /* 白背景で 4.5:1 を満たす最小トーン */
+  --dads-gray-600: #666666;
+  --dads-gray-700: #4d4d4d;
+  --dads-gray-800: #333333;
+  --dads-gray-900: #1a1a1a;
+  /* Blue */
+  --dads-blue-50: #e8f1fe;
+  --dads-blue-100: #d9e6ff;
+  --dads-blue-300: #9db7f9;
+  --dads-blue-900: #0017c1;
+  --dads-blue-1000: #00118f;
+  --dads-blue-1200: #000060;
+  /* Green */
+  --dads-green-50: #e6f5ec;
+  --dads-green-300: #71c598;
+  --dads-green-600: #259d63;
+  --dads-green-900: #115a36;
+  --dads-green-1200: #032213;
+  /* Yellow */
+  --dads-yellow-50: #fbf5e0;
+  --dads-yellow-300: #ffd43d;
+  --dads-yellow-700: #b78f00;
+  --dads-yellow-1200: #604b00;
+  /* Red */
+  --dads-red-50: #fdeeee;
+  --dads-red-300: #ff9696;
+  --dads-red-800: #ec0000;
+  --dads-red-1200: #620000;
+  /* Orange */
+  --dads-orange-50: #ffeee2;
+  --dads-orange-300: #ffa66d;
+  --dads-orange-900: #ac3e00;
+  --dads-orange-1200: #541e00;
+  /* Purple */
+  --dads-purple-50: #f1eafa;
+  --dads-purple-300: #cda6ff;
+  --dads-purple-900: #5109ad;
+  --dads-purple-1200: #21004b;
+  /* Cyan */
+  --dads-cyan-50: #e9f7f9;
+  --dads-cyan-900: #006f83;
+  /* Typography / Elevation */
+  --dads-font-sans: 'Noto Sans JP', -apple-system, BlinkMacSystemFont, sans-serif;
+  --dads-font-mono: 'Noto Sans Mono', monospace;
+  --dads-elevation-1: 0 2px 8px 1px rgba(0,0,0,0.1), 0 1px 5px 0 rgba(0,0,0,0.3);
+}
+
+/* --- セマンティックトークン (ライト) --- */
+:root {
+  --font-family: var(--dads-font-sans);
+  --font-family-mono: var(--dads-font-mono);
+  --bg: var(--dads-white);
+  --bg-alt: var(--dads-gray-50);
+  --text: var(--dads-gray-900);
+  --text-muted: var(--dads-gray-536);   /* 本文コントラスト 4.5:1 を確保 */
+  --border: var(--dads-gray-200);
+  --border-strong: var(--dads-gray-600);
+  --accent: var(--dads-blue-900);
+  --accent-light: var(--dads-blue-50);
+  --green: var(--dads-green-600);
+  --green-bg: var(--dads-green-50);
+  --yellow: var(--dads-yellow-700);
+  --yellow-bg: var(--dads-yellow-50);
+  --red: var(--dads-red-800);
+  --red-bg: var(--dads-red-50);
+  --radius: 8px;
+  --shadow: var(--dads-elevation-1);
+  --badge-dimension-bg: var(--dads-cyan-50);
+  --badge-dimension-fg: var(--dads-cyan-900);
+  --badge-measure-bg: var(--dads-green-50);
+  --badge-measure-fg: var(--dads-green-900);
+  --badge-attribute-bg: var(--dads-orange-50);
+  --badge-attribute-fg: var(--dads-orange-900);
+  --badge-identifier-bg: var(--dads-purple-50);
+  --badge-identifier-fg: var(--dads-purple-900);
+  --qc-group-border: var(--dads-blue-900);
+  --qc-group-bg: var(--dads-blue-50);
+  --qc-group-fg: var(--dads-blue-1000);
+  --qc-metric-border: var(--dads-green-600);
+  --qc-metric-bg: var(--dads-green-50);
+  --qc-metric-fg: var(--dads-green-900);
+  --qc-explode-border: var(--dads-orange-900);
+  --qc-explode-bg: var(--dads-orange-50);
+  --qc-explode-fg: var(--dads-orange-900);
+  --qc-filter-border: var(--dads-purple-900);
+  --qc-filter-bg: var(--dads-purple-50);
+  --qc-filter-fg: var(--dads-purple-900);
+}
+
+/* --- セマンティックトークン (ダーク) --- */
+/* DADS はライトを基準に定義されているため、暗背景では同一パレット内の
+ * 明るいトーン (300 番台) を前景に、暗いトーン (1200 番台) を背景に割り当てる。 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: var(--dads-gray-900);
+    --bg-alt: var(--dads-gray-800);
+    --text: var(--dads-gray-50);
+    --text-muted: var(--dads-gray-400);
+    --border: var(--dads-gray-700);
+    --border-strong: var(--dads-gray-400);
+    --accent: var(--dads-blue-300);
+    --accent-light: var(--dads-blue-1200);
+    --green: var(--dads-green-300);
+    --green-bg: var(--dads-green-1200);
+    --yellow: var(--dads-yellow-300);
+    --yellow-bg: var(--dads-yellow-1200);
+    --red: var(--dads-red-300);
+    --red-bg: var(--dads-red-1200);
+    --badge-dimension-bg: var(--dads-cyan-900);
+    --badge-dimension-fg: var(--dads-cyan-50);
+    --badge-measure-bg: var(--dads-green-1200);
+    --badge-measure-fg: var(--dads-green-300);
+    --badge-attribute-bg: var(--dads-orange-1200);
+    --badge-attribute-fg: var(--dads-orange-300);
+    --badge-identifier-bg: var(--dads-purple-1200);
+    --badge-identifier-fg: var(--dads-purple-300);
+    --qc-group-border: var(--dads-blue-300);
+    --qc-group-bg: var(--dads-blue-1200);
+    --qc-group-fg: var(--dads-blue-100);
+    --qc-metric-border: var(--dads-green-300);
+    --qc-metric-bg: var(--dads-green-1200);
+    --qc-metric-fg: var(--dads-green-300);
+    --qc-explode-border: var(--dads-orange-300);
+    --qc-explode-bg: var(--dads-orange-1200);
+    --qc-explode-fg: var(--dads-orange-300);
+    --qc-filter-border: var(--dads-purple-300);
+    --qc-filter-bg: var(--dads-purple-1200);
+    --qc-filter-fg: var(--dads-purple-300);
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 14px; }
+body {
+  font-family: var(--font-family);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  padding: 12px 16px;
+}
+
+/* --- ヘッダー・メタ情報 --- */
+.header { margin-bottom: 12px; }
+.header h1 { font-size: 1.1rem; font-weight: 600; }
+.meta {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  font-size: 1rem; color: var(--text-muted);
+  margin-top: 4px;
+}
+.meta span { white-space: nowrap; }
+
+/* --- サマリーカード --- */
+.summary-cards {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  margin-bottom: 16px;
+}
+.card {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  min-width: 100px;
+  flex: 1;
+}
+.card .label { font-size: 1rem; color: var(--text-muted); }
+.card .value { font-size: 1.4rem; font-weight: 700; margin-top: 2px; }
+
+/* --- テーブル (DADS Table コンポーネント準拠) --- */
+/* @see https://design.digital.go.jp/dads/components/table/ */
+/* DADS: ヘッダー bg-solid-gray-50, border-b border-black, セルは下線のみ */
+.table-wrap {
+  overflow-x: auto;
+  min-width: 0;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 1rem;
+  line-height: 1.7;
+}
+thead { position: sticky; top: 0; z-index: 1; }
+th {
+  background: var(--bg-alt);
+  border: none;
+  border-bottom: 2px solid var(--text);
+  padding: 10px 16px;
+  text-align: left;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+th:hover { color: var(--accent); }
+th .sort-icon { margin-left: 4px; font-size: 1rem; }
+td {
+  padding: 10px 16px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+}
+td:hover { white-space: normal; word-break: break-all; }
+tr:nth-child(even) { background: var(--bg-alt); }
+tr:hover { background: var(--accent-light); }
+
+/* --- プログレスバー --- */
+.progress-bar {
+  height: 22px;
+  background: var(--border);
+  border-radius: 11px;
+  overflow: hidden;
+  position: relative;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 11px;
+  transition: width 0.3s ease;
+}
+.progress-label {
+  position: absolute;
+  right: 6px;
+  top: 0;
+  line-height: 22px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* --- チャートコンテナ --- */
+.chart-container {
+  position: relative;
+  margin: 16px 0;
+}
+/* --- ECharts チャート --- */
+.chart-container > div[_echarts_instance_] { width: 100% !important; }
+
+/* --- トグルボタン --- */
+.toggle-group {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.toggle-btn {
+  padding: 6px 14px;
+  font-size: 1rem;
+  background: var(--bg);
+  border: none;
+  cursor: pointer;
+  color: var(--text);
+}
+.toggle-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+.toggle-btn:not(:last-child) { border-right: 1px solid var(--border); }
+
+/* フィールドバッジ */
+.field-badge {
+  display: inline-block;
+  font-size: 1rem;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-weight: 600;
+  margin-right: 4px;
+  background: var(--bg-alt);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.field-badge.dimension  { background: var(--badge-dimension-bg);  color: var(--badge-dimension-fg); border: none; }
+.field-badge.measure    { background: var(--badge-measure-bg);    color: var(--badge-measure-fg); border: none; }
+.field-badge.attribute  { background: var(--badge-attribute-bg);  color: var(--badge-attribute-fg); border: none; }
+.field-badge.identifier { background: var(--badge-identifier-bg); color: var(--badge-identifier-fg); border: none; }
+
+/* ローディング */
+.loading {
+  display: inline-block;
+  width: 16px; height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* --- フォーカス (DADS アクセシビリティ準拠) --- */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --- ユーティリティ --- */
+.text-muted { color: var(--text-muted); }
+.text-right { text-align: right; }
+.mt-4 { margin-top: 4px; }
+.mt-8 { margin-top: 8px; }
+.mt-16 { margin-top: 16px; }
+.hidden { display: none !important; }
+.flex { display: flex; }
+.flex-wrap { flex-wrap: wrap; }
+
+/* --- コラプシブルバー (折りたたみUI) --- */
+.collapsible-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+.collapsible-bar:hover {
+  background: var(--accent-light);
+}
+.collapsible-bar .collapsible-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: 1rem;
+  color: var(--text);
+  align-items: center;
+  min-width: 0;
+}
+.collapsible-bar .collapsible-summary .cb-label {
+  font-weight: 600;
+}
+.collapsible-bar .collapsible-summary .cb-sep {
+  color: var(--border-strong);
+}
+.collapsible-toggle {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  font-size: 1rem;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+.collapsible-toggle:hover { opacity: 0.85; }
+.collapsible-toggle .arrow {
+  display: inline-block;
+  transition: transform 0.2s;
+}
+.collapsible-bar.expanded .collapsible-toggle .arrow {
+  transform: rotate(90deg);
+}
+.collapsible-content {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.3s ease, opacity 0.2s ease, margin 0.2s ease;
+  margin-top: 0;
+}
+.collapsible-content.open {
+  max-height: none;
+  opacity: 1;
+  margin-top: 12px;
+}
+
+/* --- 詳細パネル (パイチャートクリック時) --- */
+.detail-panel {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-top: 8px;
+  animation: detail-fade-in 0.2s ease;
+}
+@keyframes detail-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.detail-panel .detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.detail-panel .detail-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 1rem;
+  min-width: 0;
+  word-break: break-all;
+}
+.detail-panel .detail-color {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+.detail-panel .detail-close {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+}
+.detail-panel .detail-close:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+.detail-panel .detail-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.detail-panel .detail-metric {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 12px;
+  min-width: 80px;
+}
+.detail-panel .detail-metric .label {
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+.detail-panel .detail-metric .value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-top: 1px;
+}
+
+/* --- クエリ条件表示 --- */
+.query-conditions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.query-conditions .qc-item {
+  display: inline-block;
+  font-size: 1rem;
+  padding: 4px 10px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.qc-item.qc-group   { border-left-color: var(--qc-group-border);   background: var(--qc-group-bg);   color: var(--qc-group-fg); }
+.qc-item.qc-metric  { border-left-color: var(--qc-metric-border);  background: var(--qc-metric-bg);  color: var(--qc-metric-fg); }
+.qc-item.qc-explode { border-left-color: var(--qc-explode-border); background: var(--qc-explode-bg); color: var(--qc-explode-fg); }
+.qc-item.qc-filter  { border-left-color: var(--qc-filter-border);  background: var(--qc-filter-bg);  color: var(--qc-filter-fg); }
+
+/* --- ドリルダウンセクション (グループ詳細レコード) --- */
+.drilldown-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 8px 16px;
+  font-size: 1rem;
+  font-weight: 600;
+  background: var(--bg);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.drilldown-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+.drilldown-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.drilldown-section {
+  margin-top: 10px;
+  animation: detail-fade-in 0.2s ease;
+}
+.drilldown-section .drilldown-count {
+  font-size: 1rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+/* 免責事項 */
+.disclaimer {
+  margin-top: 16px;
+  padding: 10px 14px;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* モバイル対応 */
+@media (max-width: 480px) {
+  body { padding: 8px 10px; }
+  .card { min-width: 80px; padding: 8px 10px; }
+  .card .value { font-size: 1.1rem; }
+  td { padding: 6px 8px; max-width: 200px; }
+  th { padding: 8px 10px; }
+}
+
+/* ヘッダホバーのフィールド定義ツールチップ (buildTable) */
+.field-tooltip {
+  position: fixed;
+  z-index: 1100;
+  max-width: 320px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  padding: 8px 10px;
+  font-size: 0.8125rem;
+  font-weight: normal;
+  line-height: 1.5;
+  color: var(--text);
+  pointer-events: none;
+  white-space: normal;
+  text-align: left;
+}
+.field-tooltip .ft-name { font-weight: 700; margin-bottom: 4px; }
+.field-tooltip .ft-row { display: flex; gap: 6px; }
+.field-tooltip .ft-key { color: var(--text-muted); flex: 0 0 3em; }
+.field-tooltip .ft-hint { color: var(--text-muted); margin-top: 4px; font-size: 0.75rem; }

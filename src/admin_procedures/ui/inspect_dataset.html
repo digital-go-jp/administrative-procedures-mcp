@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>inspect_dataset</title>
+<style>
+/* INLINE_BASE_CSS */
+.field-card {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 8px;
+}
+.field-card .field-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.field-card .field-name {
+  font-weight: 600;
+  font-size: 1rem;
+}
+.field-card .field-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 0.85rem;
+}
+.field-card .field-tags .tag {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  color: var(--text-muted);
+}
+.field-card .field-tags .tag.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.field-card .field-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 1rem;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+.field-card .field-stats span { white-space: nowrap; }
+.section-title {
+  font-weight: 600;
+  font-size: 1rem;
+  margin: 16px 0 8px 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.codelist-items {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  animation: fadeIn 0.15s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.codelist-items .cl-item {
+  display: inline-block;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+</style>
+</head>
+<body>
+<div id="app"><p class="text-muted">データを読み込み中…</p></div>
+<script>/* INLINE_ECHARTS_JS */</script>
+<script type="module">
+/* INLINE_BASE_JS */
+
+var _ROLE_LABELS = { id: "識別子", dim: "分析軸", measure: "数値項目", attr: "属性" };
+
+onData(function(data) {
+  var app = document.getElementById("app");
+  app.innerHTML = "";
+
+  if (data.error) {
+    showError(app, data.error);
+    return;
+  }
+
+  var qs = data.quality_summary || {};
+  var numStats = data.numeric_stats || {};
+
+  // columnar → オブジェクト配列に展開
+  var cols = data.columns || [];
+  var rows = data.rows || [];
+  var fields = rows.map(function(row) {
+    var obj = {};
+    cols.forEach(function(c, i) { obj[c] = i < row.length ? row[i] : null; });
+    return obj;
+  });
+
+  // computed_measures を追加
+  (data.computed_measures || []).forEach(function(cm) {
+    cm.role = "computed";
+    fields.push(cm);
+  });
+
+  createCollapsible(app, {
+    label: "データセット構造",
+    toggleLabel: "構造を表示",
+    info: [
+      { text: data.dataset_id || "" },
+      { text: "レコード: " + fmtNum(data.record_count) },
+      { text: "フィールド: " + fmtNum(fields.length) },
+    ],
+  }, buildContent);
+
+  function buildContent(container) {
+    // 品質サマリーカード
+    if (qs.fully_populated != null) {
+      var cards = document.createElement("div");
+      cards.className = "summary-cards mt-8";
+      var total = (qs.fully_populated || 0) + (qs.mostly_populated || 0) + (qs.sparse || 0);
+      cards.appendChild(createQualityTile("高カバレッジ", qs.fully_populated || 0, total, "var(--green)", "var(--green-bg)"));
+      cards.appendChild(createQualityTile("中カバレッジ", qs.mostly_populated || 0, total, "var(--yellow)", "var(--yellow-bg)"));
+      cards.appendChild(createQualityTile("低カバレッジ", qs.sparse || 0, total, "var(--red)", "var(--red-bg)"));
+      container.appendChild(cards);
+    }
+
+    // フィールドをロール別にセクション表示
+    var sections = [
+      { role: "id", label: "識別子" },
+      { role: "dim", label: "分析軸" },
+      { role: "measure", label: "数値項目" },
+      { role: "attr", label: "属性" },
+      { role: "computed", label: "算出数値項目" },
+    ];
+
+    sections.forEach(function(sec) {
+      var sectionFields = fields.filter(function(f) { return f.role === sec.role; });
+      if (sectionFields.length === 0) return;
+
+      var title = document.createElement("div");
+      title.className = "section-title";
+      title.textContent = sec.label + " (" + sectionFields.length + ")";
+      container.appendChild(title);
+
+      sectionFields.forEach(function(f) {
+        container.appendChild(buildFieldCard(f));
+      });
+    });
+
+    // 免責事項
+    if (data.provenance) {
+      container.appendChild(createDisclaimer(data.provenance));
+    }
+  }
+
+  function createQualityTile(label, count, total, accentColor, bgColor) {
+    var tile = document.createElement("div");
+    tile.className = "card";
+    tile.style.borderLeft = "none";
+    tile.style.borderTop = "3px solid " + accentColor;
+    tile.style.background = bgColor;
+    tile.style.position = "relative";
+    tile.style.overflow = "hidden";
+
+    var pct = total > 0 ? Math.round(count / total * 100) : 0;
+    tile.innerHTML =
+      '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">' +
+        '<div class="label" style="white-space:normal;word-break:break-all">' + escapeHtml(label) + '</div>' +
+        '<div style="font-size:0.85rem;color:var(--text-muted);white-space:nowrap">' + pct + '%</div>' +
+      '</div>' +
+      '<div class="value" style="color:' + accentColor + '">' + fmtNum(count) +
+        '<span style="font-size:0.85rem;font-weight:400;color:var(--text-muted);margin-left:4px">/ ' + fmtNum(total) + '</span>' +
+      '</div>' +
+      '<div style="margin-top:6px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">' +
+        '<div style="height:100%;width:' + pct + '%;background:' + accentColor + ';border-radius:2px;transition:width 0.3s"></div>' +
+      '</div>';
+    return tile;
+  }
+
+  function buildFieldCard(f) {
+    var card = document.createElement("div");
+    card.className = "field-card";
+
+    // ヘッダー: フィールド名 + ロールバッジ
+    var hdr = document.createElement("div");
+    hdr.className = "field-header";
+    var roleLabel = _ROLE_LABELS[f.role] || f.role || "";
+    hdr.innerHTML =
+      '<span class="field-name">' + escapeHtml(f.id || f.name || "") + '</span>' +
+      '<span class="field-badge">' + escapeHtml(roleLabel) + '</span>';
+    card.appendChild(hdr);
+
+    // fill_rate プログレスバー
+    if (f.fill_rate != null) {
+      card.appendChild(createProgressBar(f.fill_rate, 1));
+    }
+
+    // 機能タグ
+    var tags = document.createElement("div");
+    tags.className = "field-tags";
+    if (f.groupable) tags.appendChild(makeTag("group_by", true));
+    if (f.aggregatable) tags.appendChild(makeTag("集計可", true));
+    if (f.multi_value) tags.appendChild(makeTag("複数値", true));
+    if (f.type && f.type !== "string") tags.appendChild(makeTag(f.type, false));
+    if (f.fill_rate != null && f.fill_rate < 0.5) {
+      var wTag = makeTag("低カバレッジ", true);
+      wTag.style.background = "var(--red)";
+      tags.appendChild(wTag);
+    }
+    if (tags.childNodes.length > 0) card.appendChild(tags);
+
+    // codelist (インライン配列)
+    if (f.codelist && Array.isArray(f.codelist) && f.codelist.length > 0) {
+      var wrapper = document.createElement("div");
+      wrapper.className = "codelist-items";
+      f.codelist.forEach(function(val) {
+        var span = document.createElement("span");
+        span.className = "cl-item";
+        span.textContent = val;
+        wrapper.appendChild(span);
+      });
+      card.appendChild(wrapper);
+    }
+
+    // numeric_stats
+    var ns = numStats[f.id];
+    if (ns) {
+      var nDiv = document.createElement("div");
+      nDiv.className = "field-stats";
+      nDiv.innerHTML =
+        "<span>最小: " + fmtNum(ns.min) + "</span>" +
+        "<span>最大: " + fmtNum(ns.max) + "</span>" +
+        "<span>平均: " + fmtFloat(ns.mean) + "</span>" +
+        "<span>ゼロ: " + fmtNum(ns.zero_count) + "</span>";
+      card.appendChild(nDiv);
+    }
+
+    // description
+    var descText = f.desc || f.description || "";
+    if (descText) {
+      var desc = document.createElement("div");
+      desc.className = "field-stats";
+      desc.style.whiteSpace = "normal";
+      desc.innerHTML = '<span style="color:var(--text-muted);white-space:normal;word-break:break-word">' +
+        escapeHtml(descText) + "</span>";
+      card.appendChild(desc);
+    }
+
+    // computed_measures: formula / aggregation
+    if (f.formula || f.aggregation) {
+      var formula = document.createElement("div");
+      formula.className = "field-stats";
+      formula.style.whiteSpace = "normal";
+      formula.innerHTML =
+        (f.formula ? '<span style="white-space:normal;word-break:break-word">式: ' + escapeHtml(f.formula) + "</span>" : "") +
+        (f.aggregation ? '<span style="white-space:normal;word-break:break-word">集計: ' + escapeHtml(f.aggregation) + "</span>" : "");
+      card.appendChild(formula);
+    }
+
+    return card;
+  }
+
+  function makeTag(text, active) {
+    var span = document.createElement("span");
+    span.className = "tag" + (active ? " active" : "");
+    span.textContent = text;
+    return span;
+  }
+});
+</script>
+</body>
+</html>

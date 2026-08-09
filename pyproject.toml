@@ -1,0 +1,54 @@
+[build-system]
+# PEP 639 (license = "MIT" / license-files) のサポートは setuptools 77 以降
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "administrative-procedures-mcp"
+version = "0.3.0"
+description = "MCP server and CLI for analyzing Japan's administrative procedures survey data"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE", "NOTICE"]
+# Python 3.10 + polars 1.0.0 / fastmcp 3.2.0 の組み合わせでテスト 150 件パスを確認済み。
+dependencies = [
+    # polars 2.x では型変換・empty_as_null 等の挙動変更により DeprecationWarning が
+    # 多数発生することを確認済み。2.x に対応する際は、この上限を外したうえで
+    # CI に 2.x 用ジョブを追加する必要がある。
+    "polars>=1.0,<2",
+    "pyyaml>=6.0",
+    "pydantic>=2.0",  # dataset.yaml スキーマバリデーション用
+    "fastmcp>=3.2.0",  # FastMCP 4.x で MCP 仕様 2026-07-28 対応。明示的に pip install --pre fastmcp>=4.0.0b1 で導入可
+    # apcli が直接 import する。fastmcp は cyclopts 依存で click を持たないため明示する。
+    "click>=8.0",
+]
+
+[project.optional-dependencies]
+# 公的機関の配布は Excel が多いため、xlsx を直接取り込む場合に必要。
+# CSV しか扱わないなら不要。
+excel = ["fastexcel>=0.10"]
+
+[project.urls]
+Homepage = "https://github.com/digital-go-jp/administrative-procedures-mcp"
+Repository = "https://github.com/digital-go-jp/administrative-procedures-mcp"
+
+[project.scripts]
+apcli = "admin_procedures.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+admin_procedures = [
+    "ui/*.html", "ui/*.css", "ui/*.js",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

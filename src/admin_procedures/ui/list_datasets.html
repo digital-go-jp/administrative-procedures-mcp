@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>list_datasets</title>
+<style>
+/* INLINE_BASE_CSS */
+
+/* --- list_datasets 固有スタイル --- */
+.list-header { margin-bottom: 16px; }
+.list-header .header-title { font-size: 1.1rem; font-weight: 600; }
+.list-header .result-count {
+  font-size: 1rem; color: var(--text-muted); margin-top: 4px;
+}
+
+.dataset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.dataset-tile {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  cursor: pointer;
+}
+.dataset-tile:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0, 23, 193, 0.08);
+  background: var(--accent-light);
+}
+.dataset-tile.selected {
+  border: 2px solid var(--accent);
+  background: var(--accent-light);
+  box-shadow: 0 0 0 3px rgba(0, 23, 193, 0.1);
+}
+@media (prefers-color-scheme: dark) {
+  .dataset-tile:hover {
+    box-shadow: 0 2px 8px rgba(90, 123, 238, 0.15);
+  }
+}
+
+.tile-title {
+  font-weight: 700;
+  font-size: 1rem;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.tile-id {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-family: monospace;
+}
+
+.tile-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+.tile-meta span { white-space: nowrap; }
+
+@media (max-width: 480px) {
+  .dataset-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div id="app"><p class="text-muted">データを読み込み中…</p></div>
+
+<script>/* INLINE_ECHARTS_JS */</script>
+<script type="module">
+/* INLINE_BASE_JS */
+
+onData(function(data) {
+  var app = document.getElementById("app");
+  app.innerHTML = "";
+
+  if (data.error) {
+    showError(app, data.error);
+    return;
+  }
+
+  var datasets = data.datasets || [];
+  var total = data.total || datasets.length;
+
+  // --- Header ---
+  var header = document.createElement("div");
+  header.className = "list-header";
+  var title = document.createElement("div");
+  title.className = "header-title";
+  title.textContent = "\u5229\u7528\u53EF\u80FD\u306A\u30C7\u30FC\u30BF\u30BB\u30C3\u30C8";
+  header.appendChild(title);
+  var countText = document.createElement("div");
+  countText.className = "result-count";
+  countText.textContent = fmtNum(total) + " \u4EF6";
+  header.appendChild(countText);
+  app.appendChild(header);
+
+  if (datasets.length === 0) {
+    var empty = document.createElement("p");
+    empty.className = "text-muted";
+    empty.textContent = "\u30C7\u30FC\u30BF\u30BB\u30C3\u30C8\u304C\u767B\u9332\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002";
+    app.appendChild(empty);
+    return;
+  }
+
+  // --- Dataset Grid ---
+  var grid = document.createElement("div");
+  grid.className = "dataset-grid";
+
+  datasets.forEach(function(d) {
+    var tile = document.createElement("div");
+    tile.className = "dataset-tile";
+    tile.style.cursor = "pointer";
+
+    // Title
+    var titleEl = document.createElement("div");
+    titleEl.className = "tile-title";
+    titleEl.textContent = d.title || d.dataset_id;
+    tile.appendChild(titleEl);
+
+    // Dataset ID
+    var idEl = document.createElement("div");
+    idEl.className = "tile-id";
+    idEl.textContent = d.dataset_id;
+    tile.appendChild(idEl);
+
+    // Meta: publisher + record_count
+    var meta = document.createElement("div");
+    meta.className = "tile-meta";
+    if (d.publisher) {
+      var pub = document.createElement("span");
+      pub.textContent = d.publisher;
+      meta.appendChild(pub);
+    }
+    if (d.record_count != null) {
+      var rc = document.createElement("span");
+      rc.textContent = fmtNum(d.record_count) + " \u4EF6";
+      meta.appendChild(rc);
+    }
+    tile.appendChild(meta);
+
+    tile.addEventListener("click", function() {
+      tile.classList.add("selected");
+      tile.style.pointerEvents = "none";
+      try {
+        parent.postMessage({ type: "dataset-selected", dataset_id: d.dataset_id }, window.location.origin || "*");
+      } catch (e) {
+        console.error("postMessage failed:", e);
+      }
+    });
+
+    grid.appendChild(tile);
+  });
+
+  app.appendChild(grid);
+
+  // Report size to iframe parent
+  if (typeof _app !== "undefined" && _app) {
+    setTimeout(function() { _app._reportSize(); }, 100);
+  }
+});
+</script>
+</body>
+</html>
