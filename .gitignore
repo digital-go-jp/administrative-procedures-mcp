@@ -77,3 +77,6 @@ source-data/
 
 # apcli preview の実行ログ・eval 結果 (実行時に生成される)
 tests/evals/results/
+
+# 実験用 PoC (公開対象外)
+poc/
