@@ -29,6 +29,7 @@ excel = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "jsonschema" },
     { name = "pytest" },
 ]
 
@@ -44,7 +45,10 @@ requires-dist = [
 provides-extras = ["excel"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=9.0.2" }]
+dev = [
+    { name = "jsonschema", specifier = ">=4.0" },
+    { name = "pytest", specifier = ">=9.0.2" },
+]
 
 [[package]]
 name = "aiofile"

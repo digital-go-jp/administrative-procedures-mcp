@@ -18,6 +18,7 @@ Python コードを変更せずに、データセットの追加・変更が可�
 ## 基本構造
 
 ```yaml
+# yaml-language-server: $schema=../dataset-v1.schema.json
 schema_version: "1"                  # YAML スキーマバージョン (必須)
 title: データセット名                # 日本語タイトル
 publisher: 発行者名
@@ -38,6 +39,14 @@ generic_values: ...
 ```
 
 > **Note**: データセット ID は `datasets/` 配下のディレクトリ名から自動取得されます。YAML 内に `id:` キーを記述した場合はそちらが優先されます。
+
+---
+
+## エディタでの補完・検証 (JSON Schema)
+
+dataset.yaml の JSON Schema を [datasets/dataset-v1.schema.json](../datasets/dataset-v1.schema.json) に同梱しています。1 行目のモードライン（上記の例の `# yaml-language-server: $schema=...`）でスキーマファイルへの相対パスを指定すると、VS Code（[YAML 拡張](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)）などのエディタや AI コーディングエージェントが補完・タイポ検出・型検証に利用できます（`datasets/<dataset_id>/dataset.yaml` からは `../dataset-v1.schema.json`）。
+
+スキーマは執筆時の補完・参考のための緩やかな定義であり、モードラインの記述は任意です。スキーマに記載のないキーも許容します。
 
 ---
 
@@ -125,7 +134,7 @@ fields:
 | キー | 必須 | デフォルト | 説明 |
 |------|------|-----------|------|
 | `name` | Yes | - | フィールド名 (Parquet カラム名と一致) |
-| `role` | Yes | - | `id`, `dim`, `measure`, `attr` のいずれか |
+| `role` | No | `attr` | `id`, `dim`, `measure`, `attr` のいずれか |
 | `groupable` | No | ロールによる | `true`/`false` でロールデフォルトを上書き |
 | `desc` | No | - | フィールドの説明文 |
 | `data_type` | No | ロールによる | `string`, `integer`, `float` のいずれか |
@@ -149,6 +158,8 @@ fields:
 ```
 
 算出メジャー（`computed_measures`）は、関連フィールドの notes を自動継承します。
+
+`notes` はリスト形式のほか、`notes: {details: [...]}` のマッピング形式でも記述できます（意味は同じです）。
 
 > **Note**: 数値フィールド (`data_type: integer`) で CSV の空セルは Parquet 上で `null` になります。
 > `0` と `null` は異なる意味を持ちます（`0` = ゼロ、`null` = 不明/欠損）。

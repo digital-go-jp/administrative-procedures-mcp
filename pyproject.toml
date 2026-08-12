@@ -51,4 +51,6 @@ addopts = "-q"
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
+    # dataset.yaml の JSON Schema (datasets/dataset-v1.schema.json) 適合テスト用
+    "jsonschema>=4.0",
 ]

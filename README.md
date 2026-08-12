@@ -247,7 +247,9 @@ MCP サーバーに接続した Claude Desktop や ChatGPT 等のチャットか
 |----------------|---------|--------|
 | `procedures-survey-r6` | 行政手続等の棚卸調査結果（令和6年度悉皆調査） | デジタル庁 |
 
-データセットの追加方法は [docs/development.md](docs/development.md) を参照してください。
+データセットの追加方法は [docs/development.md](docs/development.md) を、dataset.yaml の記述方法は [docs/dataset-yaml-guide.md](docs/dataset-yaml-guide.md) を参照してください（補完・検証用の JSON Schema を [datasets/dataset-v1.schema.json](datasets/dataset-v1.schema.json) に同梱しています）。
+
+AI エージェント向けに、リポジトリのドキュメント一覧を [llms.txt](llms.txt) として公開しています。
 
 ## 利用に際しての注意事項
 

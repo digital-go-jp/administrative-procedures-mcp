@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../dataset-v1.schema.json
 schema_version: "1"
 title: 行政手続等の棚卸調査結果
 publisher: デジタル庁 (Digital Agency of Japan)

@@ -1,0 +1,263 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "dataset.yaml (schema_version \"1\")",
+  "description": "行政手続カタログ MCP Server のデータセット定義ファイル dataset.yaml のスキーマ。記述方法は docs/dataset-yaml-guide.md を参照。執筆時の補完・参考のための緩やかな定義であり、記載のないキーも許容する（ローダーも未知のトップレベルキーは警告のみで読み込む）。dataset.yaml の 1 行目に「# yaml-language-server: $schema=<このファイルへの相対パス>」と書くとエディタで参照できる。",
+  "type": "object",
+  "required": ["schema_version", "data_file", "fields"],
+  "properties": {
+    "schema_version": {
+      "enum": ["1", 1],
+      "description": "dataset.yaml フォーマットのバージョン。このスキーマは \"1\" に対応する。"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+      "description": "データセット ID。省略時はディレクトリ名が使われる。英小文字・数字・ピリオド・ハイフン・アンダースコアのみ（連続ピリオド .. は不可）。"
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^[^\\n\\r\\t\\u0000\\u001b]*$",
+      "description": "データセットの表示名。256 文字以内、改行・制御文字は不可。"
+    },
+    "publisher": {
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^[^\\n\\r\\t\\u0000\\u001b]*$",
+      "description": "データの公表主体。256 文字以内、改行・制御文字は不可。"
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "分類用タグ（任意）。"
+    },
+    "update_frequency": {
+      "type": "string",
+      "description": "更新頻度の説明（任意・自由記述）。"
+    },
+    "contact": {
+      "type": "string",
+      "description": "問い合わせ先（任意・自由記述）。"
+    },
+    "id_field": {
+      "type": "string",
+      "description": "レコードを一意に識別するフィールド名（任意）。"
+    },
+    "source": { "$ref": "#/definitions/source" },
+    "data_file": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^/\\\\][^\\\\]*$",
+      "description": "Parquet ファイルへの相対パス（dataset.yaml からの相対）。絶対パスやディレクトリ外へのエスケープは不可。"
+    },
+    "as_of_date": {
+      "type": "string",
+      "pattern": "^(\\d{4}-\\d{2}-\\d{2})?$",
+      "description": "データの基準日（YYYY-MM-DD）。未定の場合は空文字列。"
+    },
+    "published_at": {
+      "type": "string",
+      "pattern": "^(\\d{4}-\\d{2}-\\d{2})?$",
+      "description": "データの公表日（YYYY-MM-DD）。未定の場合は空文字列。"
+    },
+    "fields": {
+      "type": ["array", "null"],
+      "items": { "$ref": "#/definitions/field" },
+      "description": "フィールド定義のリスト。"
+    },
+    "generic_values": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "「その他」など、UI の候補表示で優先度を下げる汎用値のリスト。"
+    },
+    "computed_measures": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/computed_measure" },
+      "description": "既存フィールドから算出する数値項目の定義リスト。"
+    },
+    "enabled": {
+      "type": "boolean",
+      "description": "false を指定するとこのデータセットを登録対象から除外する。"
+    }
+  },
+  "definitions": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "データの取得元。未知キーはローダーがエラーにする（extra=forbid）。",
+      "properties": {
+        "url": {
+          "type": ["string", "null"],
+          "description": "配布ページの URL。apcli fetch の起点になる。"
+        },
+        "asset_pattern": {
+          "type": ["string", "null"],
+          "description": "配布ページ上のファイルを探す正規表現パターン。apcli fetch で使用。"
+        },
+        "csv_filename": {
+          "type": ["string", "null"],
+          "description": "取得・変換対象のファイル名。"
+        },
+        "csv_header_rows": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "CSV/Excel のヘッダー行数（0 以上の整数）。"
+        },
+        "legal_basis": {
+          "type": ["string", "null"],
+          "description": "データの根拠法令（任意・自由記述）。"
+        },
+        "note": {
+          "type": ["string", "null"],
+          "maxLength": 256,
+          "pattern": "^[^\\n\\r\\t\\u0000\\u001b]*$",
+          "description": "取得元に関する注記。256 文字以内、改行・制御文字は不可。"
+        },
+        "allowed_hosts": {
+          "not": {},
+          "deprecationMessage": "source.allowed_hosts は廃止されました。接続先を制限する場合は apcli fetch --allowed-host <ホスト名> を使用してください",
+          "description": "廃止されたキー。apcli fetch --allowed-host を使用する。"
+        }
+      }
+    },
+    "field": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "フィールド名（Parquet の列名と一致させる）。"
+        },
+        "role": {
+          "enum": ["id", "dim", "measure", "attr"],
+          "description": "フィールドの役割。id=識別子、dim=次元（グループ化・フィルタ可）、measure=数値（集計可）、attr=属性。省略時は attr。"
+        },
+        "desc": {
+          "type": "string",
+          "description": "フィールドの説明。AI がフィールドの意味を理解するために使われる。"
+        },
+        "data_type": {
+          "enum": ["string", "integer", "float"],
+          "description": "データ型。省略時は role のデフォルト（measure は integer、それ以外は string）。"
+        },
+        "groupable": {
+          "type": "boolean",
+          "description": "グループ化可否。省略時は role のデフォルトに従う。"
+        },
+        "multi_value": {
+          "type": "boolean",
+          "description": "区切り文字で複数値が入るフィールドの場合 true。"
+        },
+        "csv_col_index": {
+          "type": "integer",
+          "description": "変換元 CSV の 0 始まり列番号。負の値は変換対象外（Parquet 側にのみ存在する列）を意味する。"
+        },
+        "group": {
+          "type": "string",
+          "description": "フィールドの表示グループ名（任意）。"
+        },
+        "codelist": {
+          "oneOf": [
+            {
+              "enum": ["auto", "auto_split"],
+              "description": "auto=データから値一覧を動的生成。auto_split=multi_value を分割してから生成。"
+            },
+            {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  { "type": "string" },
+                  {
+                    "type": "object",
+                    "minProperties": 1,
+                    "maxProperties": 1,
+                    "additionalProperties": { "type": "string" }
+                  }
+                ]
+              },
+              "description": "静的コードリスト。値のみの文字列、または「値: 説明」の 1 キーのマッピング。"
+            }
+          ],
+          "description": "フィールドの値一覧。auto / auto_split（動的生成）または静的リスト。"
+        },
+        "notes": { "$ref": "#/definitions/notes" }
+      }
+    },
+    "computed_measure": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "算出数値項目の名前。既存フィールド名と重複不可。"
+        },
+        "mode": {
+          "enum": ["sum_ratio", "count_where"],
+          "description": "算出方法。sum_ratio=numerator の合計 / denominator の合計（省略時のデフォルト）。count_where=condition_field が condition_values に一致するレコード数 / 全レコード数。"
+        },
+        "numerator": {
+          "type": "string",
+          "description": "分子となる measure フィールド名（sum_ratio で必須）。"
+        },
+        "denominator": {
+          "type": "string",
+          "description": "分母となる measure フィールド名（sum_ratio で必須）。"
+        },
+        "condition_field": {
+          "type": "string",
+          "description": "件数条件の対象フィールド名（count_where で必須）。"
+        },
+        "condition_values": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "count_where で一致とみなす値のリスト。"
+        },
+        "data_type": {
+          "type": "string",
+          "description": "データ型。省略時は float。"
+        },
+        "format": {
+          "enum": ["ratio", "percentage"],
+          "description": "表示形式。省略時は ratio。"
+        },
+        "desc": {
+          "type": "string",
+          "description": "算出数値項目の説明。"
+        },
+        "notes": { "$ref": "#/definitions/notes" }
+      },
+      "if": {
+        "properties": { "mode": { "const": "count_where" } },
+        "required": ["mode"]
+      },
+      "then": {
+        "required": ["condition_field"]
+      },
+      "else": {
+        "required": ["numerator", "denominator"]
+      }
+    },
+    "notes": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        {
+          "type": "object",
+          "required": ["details"],
+          "additionalProperties": false,
+          "properties": {
+            "details": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        }
+      ],
+      "description": "データ解釈上の注意事項。文字列のリスト、または {details: [...]} 形式。ツール出力の data_caveats に反映される。"
+    }
+  }
+}

@@ -1,0 +1,20 @@
+# 行政手続データ分析 MCP Server (administrative-procedures-mcp)
+
+> デジタル庁が公表している行政手続等の棚卸調査結果（約75,000件）を、MCP サーバーと専用 CLI（apcli）で検索・集計するためのツール。Claude Desktop や ChatGPT 等の MCP 対応チャットから自然言語でデータ分析ができる。
+
+データセットは dataset.yaml で定義し（JSON Schema あり）、データ本体はリポジトリに含まれず `apcli fetch` が配布ページから取得して Parquet に変換する。本実装は技術検証を目的としたサンプルコード。
+
+## ドキュメント
+
+- [README](README.md): インストール、MCP クライアント設定、ツール一覧、apcli の使い方、利用例
+- [dataset.yaml 記述ガイド](docs/dataset-yaml-guide.md): データセット定義フォーマットの仕様（フィールドの role、codelist、notes、computed_measures）
+- [dataset.yaml JSON Schema](datasets/dataset-v1.schema.json): schema_version "1" の機械可読スキーマ。dataset.yaml の 1 行目に `# yaml-language-server: $schema=<相対パス>` と書くとエディタで補完・検証できる
+
+## データ
+
+- [行政手続等の棚卸調査結果 配布ページ](https://www.digital.go.jp/resources/procedures-survey-results): 元データ（令和6年度悉皆調査）の取得元。`apcli fetch` はここからデータを取得する
+
+## Optional
+
+- [開発ガイド](docs/development.md): アーキテクチャ、信頼境界、テスト、データセット追加手順
+- [プレビューガイド](docs/preview.md): MCP Apps UI をブラウザで確認する apcli preview の使い方
