@@ -614,10 +614,11 @@ function cleanArguments(tool, args) {
     if (Object.keys(w).length > 0) out.where = w; else delete out.where;
   }
   /* dataset_id 必須のツールで欠落していたら補完する。多データセット時は
-   * 質問との関連順 (catalogInfo[0]) を優先。
+   * 利用者が選んだデータセット、次いで質問との関連順 (catalogInfo[0]) を優先。
    * 「dataset_id が指定されていません」エラーが回答として露出した実測対策。 */
   if (allowed.dataset_id && !out.dataset_id && datasetIds.length > 0) {
-    out.dataset_id = (catalogInfo[0] && catalogInfo[0].dataset_id) || datasetIds[0];
+    out.dataset_id = selectedDatasetId ||
+      (catalogInfo[0] && catalogInfo[0].dataset_id) || datasetIds[0];
   }
   /* having は集計値 (count / sum:* 等) の絞り込み専用。キーは集計値のみ、
    * 値は演算子オブジェクトのみ許可 (">0" のような文字列は実測で発生 → 除去) */
@@ -685,6 +686,7 @@ var describeData = null;
 var datasetIds = [];
 var catalogInfo = [];  // ハーネスが prefetch した各データセットの構造・品質情報
 var datasetList = [];  // list_datasets の全件 (id/title/record_count)。多データセット時の順位付けに使う
+var selectedDatasetId = null;  // 利用者がタイルで明示的に選んだデータセット (多データセット時の既定)
 /* データセットがこの数以下なら起動時に全件 inspect する。超える場合は
  * SLM のコンテキストに収まらないため、質問に応じた遅延 inspect に切り替える */
 var INSPECT_ALL_MAX = 3;
@@ -2654,6 +2656,13 @@ function rankDatasets(question) {
 function ensureCatalogFor(question) {
   if (datasetList.length === 0 ||
       catalogInfo.length >= datasetList.length) return Promise.resolve();
+  /* 利用者がタイルでデータセットを選んでいる場合は、その選択を既定として保つ。
+   * 質問文とタイトルの文字一致で並べ替えると、選んでいない方が先頭
+   * (dataset_id 補完・提案の基準) に来ることがあったため */
+  if (selectedDatasetId &&
+      catalogInfo.some(function(c) { return c.dataset_id === selectedDatasetId; })) {
+    return Promise.resolve();
+  }
   var ranked = rankDatasets(question);
   var top = ranked.slice(0, 2).filter(function(r) { return r.score > 0.1; });
   if (top.length === 0) top = ranked.slice(0, 1);  // 汎用質問は先頭データセット
@@ -3645,6 +3654,10 @@ function buildSystemPrompt(desc) {
     }
     c.fields.forEach(function(f) { lines.push(f); });
   });
+  if (selectedDatasetId && datasetList.length > 1) {
+    lines.push("");
+    lines.push('dataset_id は、質問で別のデータセットが指定されない限り "' + selectedDatasetId + '" を使う。');
+  }
   /* 未 inspect のデータセットは id + タイトルの一覧だけ載せる (多データセット時)。
    * 構造が必要になれば inspect_dataset で確認できることを SLM に示す */
   var inspected = {};
@@ -3725,6 +3738,7 @@ function extractCatalogEntry(info, inspectData) {
 /* list_datasets UI を表示してユーザーがデータセットを選択するまで待つ。
  * ユーザーが選択したら inspectAndStartSession() がコールされる (list_datasets.html の postMessage) */
 function runDiscovery() {
+  selectedDatasetId = null;
   var box = document.createElement("details");
   box.className = "discovery";
   var boxSummary = document.createElement("summary");
@@ -3750,6 +3764,7 @@ function runDiscovery() {
  * inspect_dataset を実行して、その結果でセッション初期化 → 会話開始 */
 function inspectAndStartSession(dataset) {
   var key = "apcli-preview:catalog4:" + dataset.dataset_id;
+  selectedDatasetId = dataset.dataset_id;
   busy = true;
   return apiCall("inspect_dataset", { dataset_id: dataset.dataset_id })
     .then(function(result) {
