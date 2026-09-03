@@ -1654,7 +1654,7 @@ function fieldHints(question) {
   if (!sug && top.length > 0 && !top[0].aggregatable &&
       /が関係|が関わる|に関わる|が介在|が必要な/.test(question)) {
     var wne = {};
-    wne[top[0].f] = { "$not_empty": true };
+    wne[top[0].f] = { "$not_empty": null };
     sug = { tool: "query_records", args: { where: wne, limit: 20 } };
   }
   /* 次元フィールドそのものを尋ねる質問 (「類型は?」「どんな種類がある?」):
