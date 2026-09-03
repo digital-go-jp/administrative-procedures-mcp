@@ -83,3 +83,14 @@ class TestPreviewSuggestionSyntax:
         html = (ROOT_DIR / "src" / "admin_procedures" / "ui" / "preview_host.html").read_text(encoding="utf-8")
         assert '"$not_empty": true' not in html
         assert '"$not_empty": null' in html
+
+
+class TestPreviewSessionRecovery:
+    def test_destroyed_session_is_treated_as_recoverable(self):
+        """Chrome 側でセッションが失効したエラー ("has been destroyed" / InvalidStateError) を
+        セッション再作成の対象として扱うこと。message だけでなく name も判定に使う。"""
+        html = (ROOT_DIR / "src" / "admin_procedures" / "ui" / "preview_host.html").read_text(encoding="utf-8")
+        assert "function _sessionLost(err)" in html
+        assert "destroyed" in html.split("function _sessionLost(err)")[1].split("}")[0]
+        assert "InvalidStateError/i.test(name)" in html
+        assert "_sessionLost(err)" in html.split("function lmPrompt(")[1]
