@@ -94,3 +94,19 @@ class TestPreviewSessionRecovery:
         assert "destroyed" in html.split("function _sessionLost(err)")[1].split("}")[0]
         assert "InvalidStateError/i.test(name)" in html
         assert "_sessionLost(err)" in html.split("function lmPrompt(")[1]
+
+
+class TestPreviewSelectedDataset:
+    def test_selected_dataset_is_kept_as_default(self):
+        """タイルで選んだデータセットを、質問ごとの並べ替えより優先すること。
+        dataset_id の補完も選択中のデータセットを最優先にする。"""
+        html = (ROOT_DIR / "src" / "admin_procedures" / "ui" / "preview_host.html").read_text(encoding="utf-8")
+        assert "var selectedDatasetId = null;" in html
+        # タイル選択 (inspectAndStartSession) で記録し、再探索 (runDiscovery) で解除する
+        assert "selectedDatasetId = dataset.dataset_id;" in html.split("function inspectAndStartSession(")[1].split("\n}")[0]
+        assert "selectedDatasetId = null;" in html.split("function runDiscovery(")[1].split("\n}")[0]
+        # 選択中は ensureCatalogFor の並べ替えを行わない
+        body = html.split("function ensureCatalogFor(")[1].split("\n}")[0]
+        assert "selectedDatasetId" in body and "return Promise.resolve();" in body
+        # dataset_id 補完の優先順位
+        assert "out.dataset_id = selectedDatasetId ||" in html
