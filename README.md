@@ -1,5 +1,7 @@
 # 行政手続データ分析 MCP Server
 
+日本語 | [English](README.en.md)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![FastMCP](https://img.shields.io/badge/FastMCP-3.2%2B-green.svg)](https://gofastmcp.com)

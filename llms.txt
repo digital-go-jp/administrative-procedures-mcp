@@ -4,6 +4,8 @@
 
 データセットは dataset.yaml で定義し（JSON Schema あり）、データ本体はリポジトリに含まれず `apcli fetch` が配布ページから取得して Parquet に変換する。本実装は技術検証を目的としたサンプルコード。
 
+English documentation is available (README.en.md, docs/development.en.md); the Japanese documents are authoritative.
+
 ## ドキュメント
 
 - [README](README.md): インストール、MCP クライアント設定、ツール一覧、apcli の使い方、利用例
@@ -13,6 +15,12 @@
 ## データ
 
 - [行政手続等の棚卸調査結果 配布ページ](https://www.digital.go.jp/resources/procedures-survey-results): 元データ（令和6年度・令和7年度調査）の取得元。`apcli fetch` はここからデータを取得する
+
+## English
+
+- [README (English)](README.en.md): installation, client configuration, tools, apcli usage, and how to work with the Japanese data in English
+- [Development guide (English)](docs/development.en.md): architecture, trust boundary, tests, adding datasets
+- [dataset.yaml guide (English)](docs/dataset-yaml-guide.en.md): the dataset definition format (field roles, codelist, notes, computed_measures)
 
 ## Optional
 

@@ -1,5 +1,7 @@
 # 開発ガイド
 
+日本語 | [English](development.en.md)
+
 ## 1. プロジェクト概要
 
 本プロジェクトは、行政手続に関するデータセットを MCP（Model Context Protocol）経由で検索・集計するためのサンプル実装です。
@@ -44,7 +46,9 @@ SDMX/DSD（Data Structure Definition）の考え方を参考に、メタデー�
 ├── pyproject.toml                  # パッケージ定義、依存関係、CLIエントリーポイント
 ├── docs/
 │   ├── development.md              # 本ドキュメント
-│   └── dataset-yaml-guide.md       # dataset.yamlの記述ガイド
+│   ├── development.en.md           # 本ドキュメントの英語版
+│   ├── dataset-yaml-guide.md       # dataset.yamlの記述ガイド
+│   └── dataset-yaml-guide.en.md    # 同 英語版
 ├── datasets/
 │   ├── procedures-survey-r6/       # データセット定義（令和6年度）
 │   │   ├── dataset.yaml
@@ -272,6 +276,9 @@ python -m pytest tests/ -x
 | `test_mcp.py` | MCP インスタンス生成、キャッシュヒント宣言 |
 | `test_preview.py` | プレビューホスト、HTTP エンドポイント、Host/CSRF 検証 |
 | `test_limits.py` | 入力長、配列サイズ、クエリ・集計上限の検証 |
+| `test_dataset_schema.py` | 同梱の全 dataset.yaml の JSON Schema 適合 |
+| `test_bundled_datasets.py` | 同梱データセット定義（令和6年度・令和7年度）間の整合性 |
+| `test_docs_sync.py` | 日本語ドキュメントと英語版のコード例の一致 |
 | `conftest.py` | 共有フィクスチャ、4 件のサンプルデータ、テスト用レジストリ |
 
 ### 6.3 テストデータ
