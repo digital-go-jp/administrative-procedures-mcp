@@ -153,7 +153,7 @@ where 構文:
   $gte/$lte      範囲
   $ne            不等
   $not_contains  部分不一致
-  $not_empty     非空
+  $not_empty     非空 (値は null: {"$not_empty": null})
   複数キー        複合条件 (AND)
 \b
 出力形式:

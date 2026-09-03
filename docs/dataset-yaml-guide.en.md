@@ -150,7 +150,7 @@ fields:
 
 ### notes (caveats)
 
-Defines caveats for interpreting a field's data. They are reported as `notes` in tool responses (`summarize_records`, `query_records`): `summarize_records` includes the notes of the fields involved in `metrics` (including the fields a computed measure depends on), and `query_records` includes the notes of the fields in `select`.
+Defines caveats for interpreting a field's data. They are reported as `notes` in tool responses (`summarize_records`, `query_records`): `summarize_records` includes the notes of the fields involved in `metrics` (including the fields a computed measure depends on) and of the fields used in `group_by`, `explode`, and `where`; `query_records` includes the notes of the fields in `select` (all fields when `select` is omitted) and of the fields used in `where`.
 
 ```yaml
 - name: オンライン手続件数
