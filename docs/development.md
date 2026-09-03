@@ -46,9 +46,11 @@ SDMX/DSD（Data Structure Definition）の考え方を参考に、メタデー�
 │   ├── development.md              # 本ドキュメント
 │   └── dataset-yaml-guide.md       # dataset.yamlの記述ガイド
 ├── datasets/
-│   └── procedures-survey-r6/       # データセット定義
-│       ├── dataset.yaml
-│       └── data.parquet            # 本セットには未同梱。別途生成が必要
+│   ├── procedures-survey-r6/       # データセット定義（令和6年度）
+│   │   ├── dataset.yaml
+│   │   └── data.parquet            # 本セットには未同梱。apcli fetch で生成
+│   └── procedures-survey-r7/       # データセット定義（令和7年度）
+│       └── dataset.yaml
 ├── setup.sh                        # clone直後の初期セットアップ
 ├── .mcp.json                       # Claude Code用MCPサーバー定義
 ├── src/admin_procedures/           # メインパッケージ
