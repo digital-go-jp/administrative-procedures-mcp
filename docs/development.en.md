@@ -49,7 +49,8 @@ This project is an experimental sample for trying MCP-based search/aggregation a
 ├── docs/
 │   ├── development.md              # This document (Japanese)
 │   ├── development.en.md           # This document (English)
-│   └── dataset-yaml-guide.md       # How to write dataset.yaml
+│   ├── dataset-yaml-guide.md       # How to write dataset.yaml (Japanese)
+│   └── dataset-yaml-guide.en.md    # How to write dataset.yaml (English)
 ├── datasets/
 │   ├── procedures-survey-r6/       # Dataset definition (FY2024 survey)
 │   │   ├── dataset.yaml
@@ -493,7 +494,7 @@ If a document that explains the survey items exists, it is efficient to feed the
 
 | Input | Purpose |
 |---|---|
-| `dataset-yaml-guide.md` | The YAML specification |
+| `dataset-yaml-guide.en.md` | The YAML specification |
 | The item explanation document | The meaning, allowed values, and entry rules of each field |
 | The generated `dataset.yaml` | The file to complete |
 
@@ -520,7 +521,7 @@ python -m admin_procedures.prepare_dataset my-dataset \
 
 If `dataset.yaml` exists in the target directory, `prepare_dataset.py` automatically runs in convert mode and converts the CSV according to the YAML definition.
 
-See [dataset-yaml-guide.md](dataset-yaml-guide.md) (Japanese) for the full format.
+See [dataset-yaml-guide.en.md](dataset-yaml-guide.en.md) for the full format.
 
 ## 10. CSV to Parquet Conversion Rules
 

@@ -47,7 +47,8 @@ SDMX/DSD（Data Structure Definition）の考え方を参考に、メタデー�
 ├── docs/
 │   ├── development.md              # 本ドキュメント
 │   ├── development.en.md           # 本ドキュメントの英語版
-│   └── dataset-yaml-guide.md       # dataset.yamlの記述ガイド
+│   ├── dataset-yaml-guide.md       # dataset.yamlの記述ガイド
+│   └── dataset-yaml-guide.en.md    # 同 英語版
 ├── datasets/
 │   ├── procedures-survey-r6/       # データセット定義（令和6年度）
 │   │   ├── dataset.yaml

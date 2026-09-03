@@ -18,6 +18,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 DOC_PAIRS = [
     ("README.md", "README.en.md"),
     ("docs/development.md", "docs/development.en.md"),
+    ("docs/dataset-yaml-guide.md", "docs/dataset-yaml-guide.en.md"),
 ]
 
 # 比較対象の言語。text（プロンプト例・ツリー図）や mermaid は翻訳されるので除外

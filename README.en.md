@@ -315,7 +315,7 @@ The repository bundles dataset definitions (`dataset.yaml`) for the FY2024 and F
 
 The `r6` / `r7` in the dataset IDs are the Japanese era years Reiwa 6 and Reiwa 7. The two surveys differ in column layout and in some code values: the FY2025 survey has no 法令番号 (law number) field and no "5 一部実施済" (partially online) category in オンライン化の実施状況 (online implementation status), and it adds several free-text supplementary fields. Check each dataset's definition with `inspect_dataset` before comparing them.
 
-See [docs/development.en.md](docs/development.en.md) for how to add a dataset and [docs/dataset-yaml-guide.md](docs/dataset-yaml-guide.md) (Japanese) for how to write `dataset.yaml`. A JSON Schema for completion and validation is bundled at [datasets/dataset-v1.schema.json](datasets/dataset-v1.schema.json).
+See [docs/development.en.md](docs/development.en.md) for how to add a dataset and [docs/dataset-yaml-guide.en.md](docs/dataset-yaml-guide.en.md) for how to write `dataset.yaml`. A JSON Schema for completion and validation is bundled at [datasets/dataset-v1.schema.json](datasets/dataset-v1.schema.json).
 
 For AI agents, the list of documents in the repository is published as [llms.txt](llms.txt).
 

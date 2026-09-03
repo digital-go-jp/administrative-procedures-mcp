@@ -1,5 +1,7 @@
 # dataset.yaml 記述ガイド
 
+日本語 | [English](dataset-yaml-guide.en.md)
+
 `datasets/<dataset_id>/dataset.yaml` はデータセットの定義ファイルです。
 Python コードを変更せずに、データセットの追加・変更が可能です。
 
@@ -140,13 +142,13 @@ fields:
 | `data_type` | No | ロールによる | `string`, `integer`, `float` のいずれか |
 | `codelist` | No | - | コードリスト (下記参照) |
 | `multi_value` | No | `false` | セミコロン区切りの複数値フィールド |
-| `notes` | No | `[]` | データ解釈上の注意事項リスト。ツール出力の `data_caveats` に反映 |
+| `notes` | No | `[]` | データ解釈上の注意事項リスト。ツール応答の `notes` に反映 |
 | `csv_col_index` | No | 配列インデックス | CSV カラムの0始まりインデックス |
 | `group` | No | `""` | フィールドの分類グループ名 |
 
 ### notes (注意事項)
 
-フィールドのデータ解釈上の注意事項を定義します。ツール出力（`summarize_records`, `query_records`）の `data_caveats` に反映され、LLM に常に送信されます。
+フィールドのデータ解釈上の注意事項を定義します。ツール応答（`summarize_records`, `query_records`）の `notes` に反映されます。`summarize_records` では `metrics` に関係するフィールド（算出メジャーが依存するフィールドを含む）、`query_records` では `select` したフィールドの notes が応答に含まれます。
 
 ```yaml
 - name: オンライン手続件数

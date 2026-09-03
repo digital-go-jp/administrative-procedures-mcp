@@ -20,6 +20,7 @@ English documentation is available (README.en.md, docs/development.en.md); the J
 
 - [README (English)](README.en.md): installation, client configuration, tools, apcli usage, and how to work with the Japanese data in English
 - [Development guide (English)](docs/development.en.md): architecture, trust boundary, tests, adding datasets
+- [dataset.yaml guide (English)](docs/dataset-yaml-guide.en.md): the dataset definition format (field roles, codelist, notes, computed_measures)
 
 ## Optional
 
