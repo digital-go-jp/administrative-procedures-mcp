@@ -148,7 +148,7 @@ fields:
 
 ### notes (注意事項)
 
-フィールドのデータ解釈上の注意事項を定義します。ツール応答（`summarize_records`, `query_records`）の `notes` に反映されます。`summarize_records` では `metrics` に関係するフィールド（算出メジャーが依存するフィールドを含む）、`query_records` では `select` したフィールドの notes が応答に含まれます。
+フィールドのデータ解釈上の注意事項を定義します。ツール応答（`summarize_records`, `query_records`）の `notes` に反映されます。`summarize_records` では `metrics` に関係するフィールド（算出メジャーが依存するフィールドを含む）と `group_by` / `explode` / `where` に使ったフィールド、`query_records` では `select` したフィールド（未指定時は全フィールド）と `where` に使ったフィールドの notes が応答に含まれます。
 
 ```yaml
 - name: オンライン手続件数

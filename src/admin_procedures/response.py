@@ -452,6 +452,7 @@ def build_inspect_response(
         "schema_version": entry.schema_version,
         "columns": list(_INSPECT_COLUMNS),
         "rows": rows,
+        "provenance": build_provenance(entry, ver),
     }
 
     # 数値統計
@@ -506,6 +507,11 @@ def build_list_response(
             item["record_count"] = entry.record_count
         if entry.schema_version:
             item["schema_version"] = entry.schema_version
+        # 年度違いのデータセットを区別できるよう、基準日と公開日を添える（未設定なら省く）
+        if entry.ver.as_of_date:
+            item["as_of_date"] = entry.ver.as_of_date
+        if entry.ver.published_at:
+            item["published_at"] = entry.ver.published_at
         datasets.append(item)
 
     return {
@@ -845,6 +851,13 @@ def execute_query(
         limit=limit if limit != 50 else None,
     )
 
+    # notes の収集対象: select 指定時は select したフィールドに加え where に使った
+    # フィールドも含める（select 未指定時は None = 全フィールド）
+    note_fields: list[str] | None = None
+    if select:
+        note_fields = list(select)
+        if where:
+            note_fields += [ja for ja in (_resolve_where_key(dsd, k) for k in where) if ja]
     result = build_query_response(
         entry, ver, dsd,
         dataset_id=dataset_id,
@@ -853,7 +866,7 @@ def execute_query(
         next_cursor=next_cursor,
         hint=hint,
         query_params=query_params,
-        selected_fields=select,
+        selected_fields=note_fields,
     )
     return apply_columnar(result)
 
@@ -993,7 +1006,14 @@ def execute_summarize(
         metrics=metrics_list if metrics_list != ["count"] else None,
     )
 
-    metric_fields = _extract_metric_fields(parsed_metrics, dsd)
+    # notes の収集対象: metrics に関与するフィールドに加え、group_by / explode / where に
+    # 使ったフィールドも含める。区分の解釈に関わる注記が、集計軸や絞り込みに使った場面でも
+    # 応答に載るようにする
+    note_fields = _extract_metric_fields(parsed_metrics, dsd)
+    note_fields += [comp.ja for comp in group_by_components]
+    if where:
+        note_fields += [ja for ja in (_resolve_where_key(dsd, k) for k in where) if ja]
+    metric_fields = note_fields
     result = build_summarize_response(
         entry, ver, dsd,
         dataset_id=dataset_id,
@@ -1027,7 +1047,7 @@ def _params(properties: dict, required: list[str] | None = None) -> dict:
     return schema
 
 
-_WHERE_DESC = "フィルタ条件。文字列=部分一致、配列=IN、$gte/$lte=範囲、$ne=不等、$not_contains=部分不一致、$not_empty=非空。"
+_WHERE_DESC = "フィルタ条件。文字列=部分一致、配列=IN、$gte/$lte=範囲、$ne=不等、$not_contains=部分不一致、$not_empty=非空（値は null: {\"$not_empty\": null}）。"
 
 TOOL_DEFINITIONS: list[dict] = [
     {
@@ -1103,7 +1123,7 @@ USAGE_GUIDE: dict = {
         "$gte/$lte": "範囲",
         "$ne": "不等",
         "$not_contains": "部分不一致",
-        "$not_empty": "非空",
+        "$not_empty": "非空（値は null: {\"$not_empty\": null}）",
         "multiple_keys": "複合条件（AND）",
     },
     "tips": [
