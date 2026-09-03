@@ -2279,6 +2279,16 @@ function promptWithTimeout(text, opts, timeoutMs) {
 var _schemaTier = 0;
 var _stallCount = 0;  // 連続タイムアウト数 (2回で制約を外す)
 
+/* セッションが使えない状態のエラーか (内部エラー / 失効)。
+ * Chrome はセッション失効時に InvalidStateError
+ * "The model execution session has been destroyed." を返す */
+function _sessionLost(err) {
+  if (!err) return false;
+  var name = String(err.name || "");
+  var msg = String(err.message || "");
+  return /unknown|invalidstate|destroyed/i.test(msg) || /InvalidStateError/i.test(name);
+}
+
 function _constraintFor(tier) {
   if (tier === 0) return ACTION_SCHEMA_SIMPLE;
   return null;
@@ -2318,10 +2328,12 @@ function lmPrompt(text, retried) {
       resetSession("コンテキスト上限に達したためセッションをリセットしました。");
       return ensureSession().then(function() { return promptWithTimeout(text); });
     }
-    /* Prompt API の内部エラー (kErrorUnknown 等の一過性障害) は
-     * セッションを作り直して一度だけ再試行する */
-    if (!retried && err && /unknown|invalidstate/i.test(String(err.message || err.name || ""))) {
-      addMsg("note", "モデル内部エラーのためセッションを作り直して再試行します");
+    /* Prompt API の内部エラー (kErrorUnknown 等の一過性障害) や、Chrome 側で
+     * セッションが失効した場合 ("The model execution session has been destroyed",
+     * name は InvalidStateError) は、セッションを作り直して一度だけ再試行する。
+     * message と name の両方を見る (message がある場合に name を見落とさないため) */
+    if (!retried && err && _sessionLost(err)) {
+      addMsg("note", "内蔵 AI のセッションが使えなくなったため作り直して再試行します");
       resetSession(null);
       return ensureSession().then(function() { return lmPrompt(text, true); });
     }
