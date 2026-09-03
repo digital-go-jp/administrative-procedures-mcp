@@ -12,7 +12,7 @@
 
 ## データ
 
-- [行政手続等の棚卸調査結果 配布ページ](https://www.digital.go.jp/resources/procedures-survey-results): 元データ（令和6年度悉皆調査）の取得元。`apcli fetch` はここからデータを取得する
+- [行政手続等の棚卸調査結果 配布ページ](https://www.digital.go.jp/resources/procedures-survey-results): 元データ（令和6年度・令和7年度調査）の取得元。`apcli fetch` はここからデータを取得する
 
 ## Optional
 

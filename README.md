@@ -29,11 +29,13 @@ cd administrative-procedures-mcp
 ```
 
 `setup.sh` が依存インストール・データ取得・接続方法の案内までを行います。
+取得する調査年度は対話で選べます（`--dataset all|r7|r6`、既定は令和7年度と令和6年度の両方）。
 手動で行う場合は次のとおりです。
 
 ```bash
 uv sync --extra excel              # uv を使う場合（推奨）
-apcli fetch procedures-survey-r6   # 調査結果データを配布元から取得
+apcli fetch procedures-survey-r7   # 令和7年度の調査結果データを配布元から取得
+apcli fetch procedures-survey-r6   # 令和6年度分（年度間で比較する場合）
 ```
 
 ### データについて
@@ -198,7 +200,7 @@ ADMIN_PROCEDURES_PORT=8000 python -m admin_procedures
 #### `query_records`
 
 - `dataset_id` (str): データセットID
-- `where` (dict, optional): フィルタ条件（文字列=部分一致、配列=IN、`$gte`/`$lte`=範囲、`$ne`=不等、`$not_contains`=部分不一致、`$not_empty`=非空）
+- `where` (dict, optional): フィルタ条件（文字列=部分一致、配列=IN、`$gte`/`$lte`=範囲、`$ne`=不等、`$not_contains`=部分不一致、`$not_empty`=非空。値は `null` 固定で `{"$not_empty": null}` と書く）
 - `q` (str, optional): 全文検索キーワード
 - `search_fields` (list, optional): 全文検索スコープの限定
 - `select` (list, optional): 取得フィールド
@@ -239,13 +241,22 @@ MCP サーバーに接続した Claude Desktop や ChatGPT 等のチャットか
 事実と提案は分けて書いてください。
 ```
 
+```text
+令和6年度と令和7年度のデータセットで、所管府省庁ごとのオンライン率を比較してください。
+年度ごとに集計した結果を並べ、変化の大きい府省庁を示してください。
+年度間で手続の集合や調査項目の定義が異なる点は注記してください。
+```
+
 ## データセット
 
-サンプルとして、令和6年度行政手続等の棚卸結果（悉皆調査）のデータセット定義（dataset.yaml）を同梱しています。データ本体はリポジトリに含まれず、`apcli fetch` が[配布ページ](https://www.digital.go.jp/resources/procedures-survey-results)から取得して Parquet に変換します（[データについて](#データについて)を参照）。
+サンプルとして、令和6年度および令和7年度の行政手続等の棚卸調査結果のデータセット定義（dataset.yaml）を同梱しています。データ本体はリポジトリに含まれず、`apcli fetch` が[配布ページ](https://www.digital.go.jp/resources/procedures-survey-results)から取得して Parquet に変換します（[データについて](#データについて)を参照）。
 
 | データセット ID | タイトル | 提供元 |
 |----------------|---------|--------|
-| `procedures-survey-r6` | 行政手続等の棚卸調査結果（令和6年度悉皆調査） | デジタル庁 |
+| `procedures-survey-r7` | 行政手続等の棚卸調査結果（令和7年度、令和7年11月1日時点） | デジタル庁 |
+| `procedures-survey-r6` | 行政手続等の棚卸調査結果（令和6年度悉皆調査、令和6年3月31日時点） | デジタル庁 |
+
+年度間で列構成とコード値が一部異なります（令和7年度には「法令番号」の項目がなく、オンライン化の実施状況の「5 一部実施済」区分もありません。補足の自由記述項目が追加されています）。比較する際は各データセットの `inspect_dataset` で定義を確認してください。
 
 データセットの追加方法は [docs/development.md](docs/development.md) を、dataset.yaml の記述方法は [docs/dataset-yaml-guide.md](docs/dataset-yaml-guide.md) を参照してください（補完・検証用の JSON Schema を [datasets/dataset-v1.schema.json](datasets/dataset-v1.schema.json) に同梱しています）。
 
