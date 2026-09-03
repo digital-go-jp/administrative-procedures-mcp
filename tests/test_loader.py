@@ -38,6 +38,7 @@ class TestDiscovery:
         assert len(dirs) >= 1
         names = [d.name for d in dirs]
         assert "procedures-survey-r6" in names
+        assert "procedures-survey-r7" in names
 
     def test_discover_empty_dir(self, tmp_path):
         """空ディレクトリでは何も検出されない。"""
