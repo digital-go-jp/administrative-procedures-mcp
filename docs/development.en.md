@@ -282,6 +282,7 @@ python -m pytest tests/ -x
 | `test_limits.py` | Input length, array size, query and aggregation caps |
 | `test_dataset_schema.py` | Conformance of every bundled `dataset.yaml` to the JSON Schema |
 | `test_bundled_datasets.py` | Consistency between the bundled dataset definitions (FY2024 and FY2025) |
+| `test_bundled_data.py` | Consistency between the bundled definitions and the fetched data (detects semicolon-joined values in single-value fields; skipped when the Parquet file is absent) |
 | `test_docs_sync.py` | Code examples in the Japanese and English documents stay identical |
 | `conftest.py` | Shared fixtures, four sample records, a test registry |
 
@@ -326,7 +327,7 @@ The data is embedded in the HTML, so the file can be opened directly in a browse
 
 ### 7.2 Interactive Preview
 
-`apcli preview` starts an SEP-1865-compliant preview host using `preview.py` and `ui/preview_host.html`. It uses Gemini Nano in Chrome and Phi-mini in Microsoft Edge to choose which MCP tool to call for a user's question.
+`apcli preview` starts an SEP-1865-compliant preview host using `preview.py` and `ui/preview_host.html`. It uses Gemini Nano in Chrome and Phi-4-mini (or Aion-1.0-Instruct) in Microsoft Edge Canary/Dev to choose which MCP tool to call for a user's question.
 
 ```bash
 apcli preview [OPTIONS]
@@ -354,6 +355,18 @@ http://127.0.0.1:8765
 ```
 
 The Prompt API has no native tool-calling feature, so a JSON Schema is passed as `responseConstraint` and the model is made to choose between `tool_call` and `answer`. After a tool runs, the UI is rendered as follows.
+
+While a question is being processed, the progress steps (session preparation › tool selection › argument generation › execution › feedback › answer) are shown on one line with elapsed seconds, and the partial output received through `promptStreaming()` streams below the line. `LanguageModel.create()` runs under a watchdog (120 s by default) with an AbortSignal, and the "中止" (cancel) button aborts the call in progress. The following URL parameters help isolate problems.
+
+| Parameter | Description |
+|---|---|
+| `?ptimeout=<ms>` | Timeout for `prompt()` (default 60000) |
+| `?ctimeout=<ms>` | Watchdog for `create()` (default 120000) |
+| `?stream=0` | Call `prompt()` instead of `promptStreaming()` |
+| `?schema=0` | Do not pass `responseConstraint` (structured output); useful where structured output crashes the model process |
+| `?flow=1` | Disable the two-phase flow (tool selection → argument generation) and use a single stage |
+
+The Prompt API names follow Chrome 151 (spec draft 2026-08): `contextUsage` / `contextWindow`, the `contextoverflow` event, and `samplingMode`. `temperature` / `topK` are ignored on web pages and are passed only for backward compatibility.
 
 ```text
 ui/initialize

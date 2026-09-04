@@ -121,17 +121,19 @@ fields:
 
 ### Roles (role)
 
-| Role | ComponentRole | groupable | filterable | aggregatable | default data_type |
-|--------|---------------|-----------|------------|--------------|---------------------|
-| `id` | IDENTIFIER | No | Yes | No | string |
-| `dim` | DIMENSION | Yes | Yes | No | string |
-| `measure` | MEASURE | No | No | Yes | integer |
-| `attr` | ATTRIBUTE | Yes | No | No | string |
+| Role | ComponentRole | groupable | aggregatable | default data_type |
+|--------|---------------|-----------|--------------|---------------------|
+| `id` | IDENTIFIER | No | No | string |
+| `dim` | DIMENSION | Yes | No | string |
+| `measure` | MEASURE | No | Yes | integer |
+| `attr` | ATTRIBUTE | Yes | No | string |
 
 - **`id`**: unique identifier of a record
-- **`dim`**: classification axis that can be grouped and filtered
+- **`dim`**: classification axis that can be grouped
 - **`measure`**: numeric data. Can be aggregated with `sum`, `avg`, `min`, `max`
 - **`attr`**: attribute. Groupable by default; disable with `groupable: false`
+
+Filtering with `where` works on every field regardless of role (strings match partially, arrays act as IN, and numbers accept `$gte` / `$lte` ranges).
 
 ### Field Options
 

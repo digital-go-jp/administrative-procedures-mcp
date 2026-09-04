@@ -171,7 +171,8 @@ apcli preview --port 9000 --no-open
 
 Please note:
 - **Limits of the built-in browser AI** — simple queries work, but combinations of several conditions and complex filters may not behave as expected. Use a full LLM such as Claude for serious analysis.
-- **Platform support** — the Prompt API is available in Chrome (138+) and Microsoft Edge Canary/Dev (138.0.3309.2+). Dataset exploration at startup works in any browser.
+- **Platform support** — the Prompt API is available in Chrome (138+, verified with 151) and Microsoft Edge Canary/Dev (138.0.3309.2+, with the "Prompt API for on-device language model" flag enabled in `edge://flags`). Dataset exploration at startup works in any browser.
+- **Progress display** — while a question is being processed, each step (session preparation, tool selection, argument generation, execution) is shown with elapsed seconds and the model's partial output. If a response stalls, the "中止" (cancel) button aborts it.
 
 ### MCP Server (HTTP Mode)
 

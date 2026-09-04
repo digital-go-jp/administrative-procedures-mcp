@@ -278,6 +278,7 @@ python -m pytest tests/ -x
 | `test_limits.py` | 入力長、配列サイズ、クエリ・集計上限の検証 |
 | `test_dataset_schema.py` | 同梱の全 dataset.yaml の JSON Schema 適合 |
 | `test_bundled_datasets.py` | 同梱データセット定義（令和6年度・令和7年度）間の整合性 |
+| `test_bundled_data.py` | 同梱データセット定義と取得済み実データの整合性（単一値項目へのセミコロン連結値の混入検出。Parquet が無ければ skip） |
 | `test_docs_sync.py` | 日本語ドキュメントと英語版のコード例の一致 |
 | `conftest.py` | 共有フィクスチャ、4 件のサンプルデータ、テスト用レジストリ |
 
@@ -322,7 +323,7 @@ HTML にはデータが埋め込まれているため、ブラウザで直接開
 
 ### 7.2 対話プレビュー
 
-`apcli preview` は、`preview.py` と `ui/preview_host.html` を使って SEP-1865 準拠のプレビューホストを起動します。Chrome では Gemini Nano、Microsoft Edge では Phi-mini を利用し、ユーザーの質問から呼び出す MCP ツールを選択します。
+`apcli preview` は、`preview.py` と `ui/preview_host.html` を使って SEP-1865 準拠のプレビューホストを起動します。Chrome では Gemini Nano、Microsoft Edge（Canary/Dev）では Phi-4-mini（または Aion-1.0-Instruct）を利用し、ユーザーの質問から呼び出す MCP ツールを選択します。
 
 ```bash
 apcli preview [OPTIONS]
@@ -350,6 +351,18 @@ http://127.0.0.1:8765
 ```
 
 Prompt API には直接的なツール呼び出し機能がないため、`responseConstraint` に JSON Schema を指定し、モデルに `tool_call` または `answer` を選択させます。ツール実行後は、次の流れで UI を描画します。
+
+質問中は進行ステップ（セッション準備 › ツール選択 › 引数生成 › 実行 › 返送 › 回答）を経過秒つきで 1 行に表示し、`promptStreaming()` で受け取った生成中の出力を行の直下に流します。`LanguageModel.create()` には watchdog（既定 120 秒）と AbortSignal を付け、「中止」ボタンで実行中の呼び出しを打ち切れます。切り分け用の URL パラメータは次のとおりです。
+
+| パラメータ | 説明 |
+|---|---|
+| `?ptimeout=<ms>` | `prompt()` のタイムアウト（既定 60000） |
+| `?ctimeout=<ms>` | `create()` の watchdog 時間（既定 120000） |
+| `?stream=0` | `promptStreaming()` を使わず `prompt()` で呼ぶ |
+| `?schema=0` | `responseConstraint`（構造化出力）を使わない。構造化出力がモデルプロセスを落とす環境の切り分け用 |
+| `?flow=1` | 二段階フロー（ツール選択 → 引数生成）を無効化して単段にする |
+
+Prompt API の名前は Chrome 151（仕様ドラフト 2026-08）に合わせています（`contextUsage` / `contextWindow`、`contextoverflow` イベント、`samplingMode`）。`temperature` / `topK` はウェブページでは無視されるため、後方互換としてのみ渡しています。
 
 ```text
 ui/initialize

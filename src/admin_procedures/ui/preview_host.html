@@ -217,10 +217,22 @@ header .sub { color: var(--text-muted); font-size: 0.875rem; }
 .turn-steps { align-self: flex-start; max-width: 100%; font-size: 0.875rem; color: var(--text-muted); }
 .steps-line { display: flex; flex-wrap: wrap; align-items: center; min-height: 32px; padding: 0 4px; }
 .steps-line .sep { margin: 0 8px; color: var(--border); }
-.steps-line .seg.running::after {
+.steps-line .seg.running .seg-label::after {
   content: "…";
   animation: thinking-dots 1.2s infinite;
 }
+.steps-line .seg-elapsed {
+  display: inline-block; margin-left: 4px;
+  color: var(--text-muted); font-variant-numeric: tabular-nums;
+}
+/* 生成中のモデル出力 (末尾) — ステップ行の直下に 1 行で流す */
+.step-live {
+  margin: 0 0 4px 4px; padding: 0 4px;
+  font-family: var(--font-family-mono); font-size: 0.8125rem; color: var(--text-muted);
+  white-space: pre-wrap; word-break: break-all;
+}
+#cancel { white-space: nowrap; }
+#setup .setup-diag { margin: 8px 0 12px; color: var(--text-muted); }
 .steps-line .seg.has-detail { cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .steps-line .seg.has-detail:hover { color: var(--accent); }
 .steps-line .seg.active { color: var(--accent); font-weight: 700; }
@@ -439,6 +451,7 @@ button.primary:disabled { background: #cccccc; border-color: #cccccc; color: #f2
   <form id="composer">
     <textarea id="input" placeholder="データについて質問してください" rows="1"></textarea>
     <button type="submit" id="send" class="primary" disabled>送信</button>
+    <button type="button" id="cancel" hidden>中止</button>
   </form>
 </div>
 
@@ -680,6 +693,7 @@ var ICONS = {
 var chatEl = document.getElementById("chat");
 var inputEl = document.getElementById("input");
 var sendBtn = document.getElementById("send");
+var cancelBtn = document.getElementById("cancel");
 var statusEl = document.getElementById("lm-status");
 
 var describeData = null;
@@ -698,127 +712,8 @@ var systemPrompt = "";
 var LM = null;            // LanguageModel 名前空間
 var lmReady = false;
 
-/* ================= Prompt API ラッパー: PreviewSession ================= */
-/**
- * Prompt API native session をラップし、streaming + エラーハンドリングを統一
- */
-function PreviewSession() {
-  this.id = "session-" + Date.now();
-  this.apiSession = null;  // LanguageModel.Session
-  this.history = [];       // {role, content} の記録（表示用）
-  this.abortController = null;
-}
-
-PreviewSession.prototype.init = function() {
-  if (!LM || typeof LM.createSession !== "function") {
-    // Prompt API 非対応環境：プレースホルダー session を作成
-    this.apiSession = { placeholder: true };
-    return Promise.resolve(this);
-  }
-  var self = this;
-  return Promise.resolve(LM.createSession()).then(function(s) {
-    self.apiSession = s;
-    return self;
-  }).catch(function(err) {
-    // createSession 失敗時もプレースホルダーでフォールバック
-    self.apiSession = { placeholder: true };
-    return self;
-  });
-};
-
-/**
- * LLM にプロンプトを送信、結果を受け取り
- * Prompt API 非対応環境では、既存の session.prompt() を使用
- * callback: {onChunk, onError, onEnd}
- */
-PreviewSession.prototype.prompt = function(text, callback) {
-  callback = callback || {};
-  if (!this.apiSession) {
-    callback.onError && callback.onError(new Error("Session not initialized"));
-    return Promise.reject(new Error("Session not initialized"));
-  }
-
-  var self = this;
-  this.history.push({ role: "user", content: text });
-
-  // プレースホルダー session（Prompt API 非対応）の場合、グローバル session を使用
-  if (this.apiSession.placeholder && typeof window.session !== "undefined" && window.session && window.session.prompt) {
-    console.log("Using fallback session (Prompt API not available)");
-    return window.session.prompt(text, callback).then(function(result) {
-      self.history.push({ role: "assistant", content: result });
-      callback.onEnd && callback.onEnd(result);
-      return result;
-    }).catch(function(err) {
-      console.error("Fallback session error:", err);
-      callback.onError && callback.onError(err);
-      throw err;
-    });
-  }
-
-  // Prompt API 対応環境
-  this.abortController = new AbortController();
-  var fullText = "";
-
-  return Promise.resolve(this.apiSession.prompt(text, {
-    signal: this.abortController.signal,
-  })).then(function(stream) {
-    if (!stream[Symbol.asyncIterator]) {
-      return Promise.resolve(stream).then(function(result) {
-        fullText = (typeof result === "string") ? result : String(result);
-        return fullText;
-      });
-    }
-    return (async function() {
-      for await (var chunk of stream) {
-        if (typeof chunk === "string") {
-          fullText += chunk;
-          callback.onChunk && callback.onChunk(chunk);
-        }
-      }
-      return fullText;
-    })();
-  }).then(function(result) {
-    self.history.push({ role: "assistant", content: fullText || result });
-    callback.onEnd && callback.onEnd(fullText || result);
-    return fullText || result;
-  }).catch(function(err) {
-    if (err.name === "AbortError") {
-      callback.onError && callback.onError(new Error("Prompt cancelled"));
-    } else {
-      callback.onError && callback.onError(err);
-    }
-    throw err;
-  });
-};
-
-PreviewSession.prototype.abort = function() {
-  if (this.abortController) {
-    this.abortController.abort();
-  }
-};
-
-PreviewSession.prototype.clone = function() {
-  var cloned = new PreviewSession();
-  cloned.history = this.history.slice();  // 浅いコピー
-  if (this.apiSession && typeof this.apiSession.clone === "function") {
-    cloned.apiSession = this.apiSession.clone();
-  }
-  return cloned;
-};
-
-PreviewSession.prototype.destroy = function() {
-  if (this.apiSession && typeof this.apiSession.destroy === "function") {
-    this.apiSession.destroy();
-  }
-  this.apiSession = null;
-  this.history = [];
-};
-
-// グローバル session インスタンス
-var session = null;
+var session = null;  // 現在のターンで使う LanguageModel セッション (baseSession の clone)
 var busy = false;
-
-/* ================= チャットポップアップ管理 ================= */
 
 /* ================= API ================= */
 
@@ -1075,29 +970,39 @@ function addMsg(cls, text) {
 }
 
 /* ── ターン内の進行ステップ表示 ──
- * 「考えています…」の代わりに、何をしているか (選択/引数生成/実行/返送/回答) を
- * 行で流す。各行はクリックで詳細 (モデル生出力・引数・抜粋) を展開できる。 */
-var _stepsHost = null;  // { line, detailPre, activeSeg }
+ * 「考えています…」の代わりに、何をしているか (セッション準備/選択/引数生成/実行/返送/回答) を
+ * パンくず 1 行で流す。実行中のステップには経過秒と生成中のモデル出力 (末尾) を添え、
+ * 確定後はクリックで詳細 (モデル生出力・引数・抜粋) を展開できる。
+ * 行はターン中に最初のステップが始まった時点で自動生成し、endTurnSteps() で閉じる
+ * (閉じるまでは同じ行に追記するので、セッション準備 → 生成 → 実行が 1 行に並ぶ) */
+var _stepsHost = null;  // { wrap, line, liveEl, detailPre, activeSeg, current, timers, open }
 
-function beginTurnSteps() {
+function ensureTurnSteps() {
+  if (_stepsHost && _stepsHost.open && _stepsHost.line.isConnected) return _stepsHost;
   var wrap = document.createElement("div");
   wrap.className = "turn-steps";
   var line = document.createElement("div");
   line.className = "steps-line";
   wrap.appendChild(line);
+  var liveEl = document.createElement("div");
+  liveEl.className = "step-live";
+  liveEl.hidden = true;
+  wrap.appendChild(liveEl);
   var detailPre = document.createElement("pre");
   detailPre.className = "step-detail";
   detailPre.hidden = true;
   wrap.appendChild(detailPre);
   chatEl.appendChild(wrap);
-  _stepsHost = { line: line, detailPre: detailPre, activeSeg: null };
+  _stepsHost = { wrap: wrap, line: line, liveEl: liveEl, detailPre: detailPre,
+                 activeSeg: null, current: null, timers: [], open: true };
+  return _stepsHost;
 }
 
 /* パンくず 1 行 (a › b › c) にステップを追加する。
- * done(label, detail) で確定し、detail 付きセグメントはクリックで下に展開 */
+ * 戻り値: done(label, detail) で確定 (detail 付きセグメントはクリックで下に展開)、
+ *         update(text) で生成中の部分出力を行の直下に表示 */
 function stepStart(label) {
-  if (!_stepsHost) return { done: function() {} };
-  var host = _stepsHost;
+  var host = ensureTurnSteps();
   if (host.line.childElementCount > 0) {
     var sep = document.createElement("span");
     sep.className = "sep";
@@ -1106,16 +1011,39 @@ function stepStart(label) {
   }
   var seg = document.createElement("span");
   seg.className = "seg running";
-  seg.textContent = label;
+  var labelEl = document.createElement("span");
+  labelEl.className = "seg-label";
+  labelEl.textContent = label;
+  seg.appendChild(labelEl);
+  var elapsedEl = document.createElement("span");
+  elapsedEl.className = "seg-elapsed";
+  seg.appendChild(elapsedEl);
   host.line.appendChild(seg);
   chatEl.scrollTop = chatEl.scrollHeight;
+  var startedAt = Date.now();
+  var timer = setInterval(function() {
+    elapsedEl.textContent = Math.round((Date.now() - startedAt) / 1000) + "秒";
+  }, 1000);
+  host.timers.push(timer);
   var finished = false;
-  return {
+  var api = {
+    update: function(text) {
+      if (finished) return;
+      host.liveEl.textContent = String(text || "").replace(/\s+/g, " ").slice(-80);
+      host.liveEl.hidden = host.liveEl.textContent === "";
+    },
     done: function(finalLabel, detailText) {
       if (finished) return;
       finished = true;
+      clearInterval(timer);
+      host.timers = host.timers.filter(function(t) { return t !== timer; });
+      if (host.current === api) host.current = null;
+      host.liveEl.hidden = true;
+      host.liveEl.textContent = "";
       seg.classList.remove("running");
-      seg.textContent = finalLabel || label;
+      labelEl.textContent = finalLabel || label;
+      var secs = Math.round((Date.now() - startedAt) / 1000);
+      elapsedEl.textContent = secs >= 1 ? secs + "秒" : "";
       if (!detailText) return;
       seg.classList.add("has-detail");
       seg.setAttribute("role", "button");
@@ -1139,6 +1067,23 @@ function stepStart(label) {
       });
     },
   };
+  host.current = api;
+  return api;
+}
+
+/* 実行中のステップに生成中の部分出力を流す (実行中ステップが無ければ何もしない) */
+function stepLive(text) {
+  if (_stepsHost && _stepsHost.current) _stepsHost.current.update(text);
+}
+
+/* ターン終了: 経過秒タイマーを止め、実行中のステップを確定して行を閉じる */
+function endTurnSteps(abortLabel) {
+  var host = _stepsHost;
+  if (!host) return;
+  if (host.current) host.current.done(abortLabel || undefined);
+  host.timers.forEach(clearInterval);
+  host.timers = [];
+  host.open = false;
 }
 
 function setStatus(text, cls) {
@@ -1164,16 +1109,29 @@ window.addEventListener("message", function(event) {
   if (msg && msg.type === "dataset-selected" && msg.dataset_id) {
     var dataset_entry = datasetList.find(function(d) { return d.dataset_id === msg.dataset_id; });
     if (dataset_entry) {
+      /* ターン実行中や準備中の選択は受け付けない。途中で finishDiscovery が
+       * セッションを reset すると、実行中のターンのセッションが消えるため */
+      if (busy) {
+        addMsg("note", "実行中のため、完了 (または中止) してからデータセットを選び直してください");
+        return;
+      }
       addMsg("note", "データセット「" + msg.dataset_id + "」を選択しました。情報を取得中…");
-      inputEl.disabled = true;
-      sendBtn.disabled = true;
+      setBusy(true);
+      newTurnController();
       inspectAndStartSession(dataset_entry).then(function() {
-        inputEl.disabled = false;
-        sendBtn.disabled = false;
-        addMsg("note", "✓ 準備完了。質問をどうぞ");
-      }).catch(function() {
-        inputEl.disabled = false;
-        sendBtn.disabled = false;
+        if (catalogInfo.length === 0) return;  // 取得失敗は inspectAndStartSession が表示済み
+        if (!lmReady) { addMsg("note", "✓ 準備完了。質問をどうぞ"); return; }
+        /* セッションをここで作っておく: 待ち時間を「準備中」の行で見せ、
+         * 最初の質問を待たせない (finishDiscovery が新カタログ用に reset 済み) */
+        return ensureSession().then(function() {
+          addMsg("note", "✓ 準備完了。質問をどうぞ");
+        }, function(err) {
+          addMsg("note", (turnCancelled() ? "中止しました" : humanizeError(err)) +
+            " — 質問時にもう一度セッションを作ります");
+        });
+      }).catch(function() { /* noop */ }).then(function() {
+        endTurnSteps(turnCancelled() ? "中止" : null);
+        setBusy(false);
       });
     }
     return;
@@ -1945,11 +1903,11 @@ function isEdge() {
 /* ================= Chrome 内蔵 AI (Prompt API) ================= */
 
 function lmNamespace() {
-  if (typeof LanguageModel !== "undefined") return LanguageModel;
-  if (typeof window.ai === "object" && window.ai && window.ai.languageModel) {
-    return window.ai.languageModel;
-  }
-  return null;
+  return typeof LanguageModel !== "undefined" ? LanguageModel : null;
+}
+
+function modelName() {
+  return isEdge() ? "Phi-mini" : "Gemini Nano";
 }
 
 /* create() に渡す言語オプション。公式ガイドラインに従い
@@ -1959,40 +1917,22 @@ var LM_LANG_OPTS = {
   expectedOutputs: [{ type: "text", languages: ["ja"] }],
 };
 var useLangOpts = true;
+/* 予測可能寄りの sampling 指定。samplingMode (仕様 2026-08。Chrome 151 時点でウェブは
+ * オリジントライアル中) は未対応環境では WebIDL の規則で無視される。temperature / topK は
+ * Chrome 151 以降ウェブページでは無視される (拡張機能のみ有効) ため後方互換として残す。
+ * したがってウェブでは出力の決定性は保証されない */
+var SAMPLING_OPTS = { samplingMode: "most-predictable", temperature: 0, topK: 1 };
 
 function lmAvailability(ns) {
-  if (typeof ns.availability === "function") {
-    return Promise.resolve()
-      .then(function() {
-        /* 言語オプション指定で試行（Chrome/Edge で対応状況が異なる可能性）
-         * 失敗したらオプション無しで再試行 */
-        return ns.availability(LM_LANG_OPTS).catch(function() {
-          return ns.availability();
-        });
-      })
-      .then(function(a) {
-        if (a !== "unavailable") {
-          useLangOpts = (a === "available" || a === "downloadable");
-          return a;
-        }
-        // availability だけで unavailable の場合、言語オプション無しで再判定
-        return ns.availability().then(function(b) {
-          useLangOpts = false;
-          return b;
-        }).catch(function() {
-          useLangOpts = false;
-          return "unavailable";
-        });
-      });
-  }
-  if (typeof ns.capabilities === "function") {
-    return ns.capabilities().then(function(c) {
+  if (typeof ns.availability !== "function") return Promise.resolve("unavailable");
+  /* 言語オプション指定で判定し、unavailable (指定を解釈できない環境を含む) なら
+   * 指定無しで再判定する。create() にも同じ判定結果 (useLangOpts) を使う */
+  return ns.availability(LM_LANG_OPTS).catch(function() { return "unavailable"; })
+    .then(function(a) {
+      if (a !== "unavailable") { useLangOpts = true; return a; }
       useLangOpts = false;
-      return c.available === "readily" ? "available"
-        : c.available === "after-download" ? "downloadable" : "unavailable";
+      return ns.availability().catch(function() { return "unavailable"; });
     });
-  }
-  return Promise.resolve("unavailable");
 }
 
 /* エージェントループの継続指示 (few-shot と実ループで同一文言を使う) */
@@ -2079,7 +2019,7 @@ function buildFewShot() {
   return shots;
 }
 
-function createSession(onProgress) {
+function createSession(onProgress, signal) {
   var monitor = function(m) {
     m.addEventListener("downloadprogress", function(e) {
       onProgress(e.loaded || 0);
@@ -2089,17 +2029,19 @@ function createSession(onProgress) {
     initialPrompts: [{ role: "system", content: systemPrompt }].concat(buildFewShot()),
     monitor: monitor,
   };
+  if (signal) base.signal = signal;  // 中止・タイムアウト時に create() を打ち切る
   var lang = useLangOpts ? LM_LANG_OPTS : {};
-  /* 出力が決定的なほどツール引数の精度が上がる。sampling 指定・言語指定・
-   * initialPrompts に対応しない環境の順にフォールバックする */
+  /* 出力が決定的なほどツール引数の精度が上がる。sampling 指定・言語指定を
+   * 拒否する環境はその順に外してフォールバックする。initialPrompts 自体が
+   * 通らない場合はエラーにする (指示なしのセッションで黙って劣化させない) */
   var attempts = [
-    Object.assign({}, base, lang, { temperature: 0, topK: 1 }),
+    Object.assign({}, base, lang, SAMPLING_OPTS),
     Object.assign({}, base, lang),
     base,
-    { systemPrompt: systemPrompt, monitor: monitor },
   ];
   function tryAt(i) {
     return LM.create(attempts[i]).catch(function(err) {
+      if (signal && signal.aborted) throw err;  // 打ち切り後は次の試行に進まない
       if (i + 1 < attempts.length) return tryAt(i + 1);
       throw err;
     });
@@ -2119,13 +2061,13 @@ var dlLabel = document.getElementById("dl-label");
 
 function showDownloadBanner(availState) {
   dlBanner.hidden = false;
-  var modelName = isEdge() ? "モデル (Phi-mini)" : "モデル (Gemini Nano)";
+  var model = "モデル (" + modelName() + ")";
   if (availState === "downloading") {
-    dlText.textContent = modelName + " をダウンロード中です。準備が完了するとチャットを利用できます。";
+    dlText.textContent = model + " をダウンロード中です。準備が完了するとチャットを利用できます。";
     dlBtn.textContent = "進捗を表示して準備を続ける";
   } else {
-    dlText.textContent = "チャットには内蔵 AI " + modelName + " のダウンロードが必要です。下のボタンで開始してください。";
-    dlBtn.textContent = modelName + " をダウンロードして開始";
+    dlText.textContent = "チャットには内蔵 AI " + model + " のダウンロードが必要です。下のボタンで開始してください。";
+    dlBtn.textContent = model + " をダウンロードして開始";
   }
 }
 
@@ -2152,14 +2094,16 @@ dlBtn.addEventListener("click", function() {
   dlProgress.hidden = false;
   dlLabel.textContent = "準備中…";
   ensureSession().then(function() {
+    endTurnSteps();
     dlBanner.hidden = true;
     lmReady = true;
-    sendBtn.disabled = busy;
+    setBusy(busy);
     inputEl.placeholder = defaultPlaceholder();
     addMsg("note", "モデルの準備ができました。質問をどうぞ。");
     if (isEvalMode()) { runEval(); return; }
     inputEl.focus();
   }).catch(function(err) {
+    endTurnSteps();
     dlBtn.disabled = false;
     dlProgress.hidden = true;
     dlLabel.textContent = "ダウンロードできませんでした: " + (err && err.message || err) +
@@ -2168,16 +2112,54 @@ dlBtn.addEventListener("click", function() {
 });
 
 var baseSession = null;  // initialPrompts 直後の純粋な状態 (clone の親)
+var _ctxOverflowed = false;  // 古い履歴が切り捨てられた (clone 非対応環境では次ターンで作り直す)
+
+/* 古い履歴が静かに切り捨てられるとシステムプロンプトごと崩れるため、イベントで
+ * 検知して注記し、診断情報にも残す。contextoverflow は仕様 2026-08 の名前、
+ * quotaoverflow は旧版 Chrome の名前。clone は別 EventTarget なので clone ごとに付ける */
+function watchContextOverflow(s) {
+  if (!s || typeof s.addEventListener !== "function") return s;
+  var seen = false;
+  function onOverflow() {
+    if (seen) return;
+    seen = true;
+    _ctxOverflowed = true;
+    if (lastTurnStats) lastTurnStats.context_overflow = true;
+    addMsg("note", "コンテキストが溢れたため古い履歴が切り捨てられました。回答が不安定になる可能性があります。");
+  }
+  ["contextoverflow", "quotaoverflow"].forEach(function(t) { s.addEventListener(t, onOverflow); });
+  return s;
+}
+
+/* create() の watchdog: モデルサービスが詰まると create() は永遠に返らないため、
+ * 一定時間で abort して失敗にする。ダウンロード進捗がある間は延長する。
+ * ?ctimeout=ms で上書き可 */
+var CREATE_TIMEOUT_MS = (function() {
+  var v = parseInt(new URLSearchParams(location.search).get("ctimeout"), 10);
+  return isNaN(v) || v <= 0 ? 120000 : v;
+})();
 
 function ensureSession() {
   if (session) return Promise.resolve(session);
   if (baseSession) { session = baseSession; return Promise.resolve(session); }
-  return createSession(markDlProgress).then(function(s) {
-    baseSession = s;
+  /* 数千トークンの initialPrompts を読み込むため数十秒かかることがある。
+   * 経過秒付きのステップとして見せ、どの経路 (送信・失効復旧・タイル選択後の
+   * 事前作成・ダウンロード) から来ても待ち時間が画面に出るようにする */
+  var st = stepStart("内蔵 AI のセッションを準備中");
+  return withWatchdog(function(signal, touch) {
+    return createSession(function(loaded) { markDlProgress(loaded); touch(); }, signal);
+  }, CREATE_TIMEOUT_MS,
+  "内蔵 AI のセッション作成がタイムアウトしました (" + Math.round(CREATE_TIMEOUT_MS / 1000) +
+  "s)。Chrome を再起動するか chrome://components でモデルの状態を確認してください"
+  ).then(function(s) {
+    baseSession = watchContextOverflow(s);
     session = s;
-    var modelMsg = isEdge() ? "Phi-mini" : "Gemini Nano";
-    setStatus("内蔵 AI: 利用可能 (" + modelMsg + ")", "ok");
+    setStatus("内蔵 AI: 利用可能 (" + modelName() + ")", "ok");
+    st.done("セッション準備完了");
     return s;
+  }, function(err) {
+    st.done(turnCancelled() ? "中止" : "セッション準備失敗", friendlyErr(err));
+    throw err;
   });
 }
 
@@ -2188,24 +2170,32 @@ function ensureSession() {
  * clone は再 create よりはるかに安価。clone 非対応環境は据え置き。 */
 function freshSession() {
   lastTurnCall = null;  // eval のケース間で文脈を持ち越さない
+  /* clone 非対応環境では、溢れた履歴を捨てる手段が作り直ししかない */
+  if (_ctxOverflowed && !(baseSession && typeof baseSession.clone === "function")) {
+    resetSession(null);
+  }
+  _ctxOverflowed = false;
   return ensureSession().then(function() {
     if (!baseSession || typeof baseSession.clone !== "function") return session;
     var old = session !== baseSession ? session : null;
     return Promise.resolve(baseSession.clone()).then(function(s) {
+      if (!s) return session;  // clone が空を返す実装では据え置く
       if (old && typeof old.destroy === "function") {
         try { old.destroy(); } catch (e) { /* noop */ }
       }
-      session = s;
-      return s;
+      session = watchContextOverflow(s);
+      return session;
     }).catch(function() { return session; });
   });
 }
 
 function sessionUsageRatio(s) {
   if (!s) return null;
-  if (s.inputUsage != null && s.inputQuota) return s.inputUsage / s.inputQuota;
-  if (s.tokensSoFar != null && s.maxTokens) return s.tokensSoFar / s.maxTokens;
-  return null;
+  /* Chrome 151+ は contextUsage / contextWindow。inputUsage / inputQuota は
+   * 旧版・拡張機能コンテキスト向けの後方互換 */
+  var used = s.contextUsage != null ? s.contextUsage : s.inputUsage;
+  var cap = s.contextWindow || s.inputQuota;
+  return used != null && cap ? used / cap : null;
 }
 
 /* ================= Thinking Zone 管理 ================= */
@@ -2221,6 +2211,68 @@ function resetSession(reason) {
   if (reason) addMsg("note", reason);
 }
 
+/* ── ターン単位の中止 ──
+ * 「中止」ボタンと eval のケース上限が、実行中の create() / prompt() を打ち切るための
+ * 共有 AbortController。各呼び出しは withWatchdog() 経由で自分用の signal を持ち、
+ * ターンの abort を購読する (create() に渡した signal を生成後に abort すると
+ * できあがったセッションが破棄されるため、ターンの signal をそのまま渡さない) */
+var _turnCtrl = null;
+
+function newTurnController() {
+  _turnCtrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+  return _turnCtrl;
+}
+function abortTurn() {
+  if (_turnCtrl) { try { _turnCtrl.abort(); } catch (e) { /* noop */ } }
+}
+function turnCancelled() {
+  return !!(_turnCtrl && _turnCtrl.signal.aborted);
+}
+function cancelledError() {
+  var e = new Error("中止しました");
+  e.name = "AbortError";
+  return e;
+}
+
+/* fn(signal, touch) を実行し、limitMs (0 で無制限) を超えたら abort して
+ * new Error(timeoutMsg) で reject する。touch() でタイマーを延長できる
+ * (モデルのダウンロード進捗など、進んでいる間は切らない用途)。
+ * settle 後に届く遅延エラー (abort による AbortError 等) は呼び出し側に渡さない */
+function withWatchdog(fn, limitMs, timeoutMsg) {
+  var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+  var signal = ctrl ? ctrl.signal : undefined;
+  var turnSignal = _turnCtrl ? _turnCtrl.signal : null;
+  return new Promise(function(resolve, reject) {
+    var settled = false;
+    var timer = null;
+    function finish(ok, v) {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      if (turnSignal) turnSignal.removeEventListener("abort", onTurnAbort);
+      (ok ? resolve : reject)(v);
+    }
+    function onTurnAbort() {
+      if (ctrl) { try { ctrl.abort(); } catch (e) { /* noop */ } }
+      finish(false, cancelledError());
+    }
+    function arm() {
+      if (timer) clearTimeout(timer);
+      if (!limitMs) return;
+      timer = setTimeout(function() {
+        if (ctrl) { try { ctrl.abort(); } catch (e) { /* noop */ } }
+        finish(false, new Error(timeoutMsg));
+      }, limitMs);
+    }
+    if (turnSignal && turnSignal.aborted) { finish(false, cancelledError()); return; }
+    if (turnSignal) turnSignal.addEventListener("abort", onTurnAbort);
+    arm();
+    var p;
+    try { p = Promise.resolve(fn(signal, arm)); } catch (e) { finish(false, e); return; }
+    p.then(function(v) { finish(true, v); }, function(e) { finish(false, e); });
+  });
+}
+
 /* モデル呼び出しの watchdog: 生成がスタックすると eval 全体が固まるため、
  * 一定時間で abort して失敗扱いにする。?ptimeout=ms で上書き可 (テスト用)。 */
 var PROMPT_TIMEOUT_MS = (function() {
@@ -2229,12 +2281,18 @@ var PROMPT_TIMEOUT_MS = (function() {
 })();
 
 function humanizeError(err) {
+  if (err && err.name === "AbortError") return "中止しました";
   var msg = (err && err.message) || String(err) || "予期しないエラーが発生しました";
   var errorMap = {
+    /* Chromium 系のオンデバイスモデルは、モデルプロセスが一定回数落ちるとその版では停止する */
+    "crashed too many times": "内蔵 AI のモデルプロセスが繰り返しクラッシュしたため、この版では停止しています。復旧手順: " +
+      "(1) アドレスバーに edge://on-device-internals (Chrome は chrome://on-device-internals) を入力して開く " +
+      "(2) Model Status タブの「Model crash count (current/maximum)」の横にある Reset ボタンを押す " +
+      "(3) ブラウザを完全に終了 (Mac は ⌘Q) して起動し直す (4) このページを開き直す。",
     "kErrorUnknown": "内蔵 AI でエラーが発生しました。もう一度試してください。",
     "NotSupportedError": "このブラウザは内蔵 AI に対応していません。Chrome か Edge を使用してください。",
     "NotAllowedError": "内蔵 AI の使用が許可されていません。",
-    "QuotaExceededError": "コンテキストサイズが超過しました。別の質問を試してください。",
+    "QuotaExceededError": "コンテキスト枠を超えました。システムプロンプトかツール結果が大きすぎる可能性があります。",
   };
   for (var key in errorMap) {
     if (msg.indexOf(key) >= 0) return errorMap[key];
@@ -2242,35 +2300,62 @@ function humanizeError(err) {
   return msg.length > 200 ? msg.slice(0, 200) + "…" : msg;
 }
 
+/* 生成中の部分出力を進行ステップに流すため promptStreaming を使う (?stream=0 で prompt() に戻す) */
+function streamEnabled() {
+  return cfgParam("stream") !== "0";
+}
+
+/* promptStreaming があれば差分チャンクを蓄積して stepLive() に流し、全文で resolve する。
+ * 無ければ prompt()。途中で失敗した場合は err.partial に蓄積分を残す */
+function streamPrompt(s, text, opts) {
+  if (!streamEnabled() || typeof s.promptStreaming !== "function") return s.prompt(text, opts);
+  var acc = "";
+  var stream;
+  try { stream = s.promptStreaming(text, opts); } catch (e) { return Promise.reject(e); }
+  if (!stream || typeof stream.getReader !== "function") return Promise.resolve(stream);
+  var reader = stream.getReader();
+  function pump() {
+    return reader.read().then(function(r) {
+      if (r.done) return acc;
+      var chunk = r.value == null ? "" : String(r.value);
+      /* 旧実装は累積テキストを返していたため、蓄積分を先頭に含むチャンクは置き換える */
+      acc = (acc && chunk.length > acc.length && chunk.indexOf(acc) === 0) ? chunk : acc + chunk;
+      stepLive(acc);
+      return pump();
+    });
+  }
+  return pump().catch(function(e) {
+    if (e && typeof e === "object") { try { e.partial = acc; } catch (x) { /* noop */ } }
+    throw e;
+  });
+}
+
 function promptWithTimeout(text, opts, timeoutMs) {
+  if (!session) {
+    /* ターン中に reset された場合などの保険: 作り直してから呼ぶ (「準備中」として見える) */
+    return ensureSession().then(function() {
+      if (!session) throw new Error("内蔵 AI のセッションを作成できませんでした");
+      return promptWithTimeout(text, opts, timeoutMs);
+    });
+  }
   var limit = timeoutMs || PROMPT_TIMEOUT_MS;
-  var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
-  var merged = Object.assign({}, opts || {});
-  if (ctrl) merged.signal = ctrl.signal;
-
-  return new Promise(function(resolve, reject) {
-    var timer = setTimeout(function() {
-      if (ctrl) { try { ctrl.abort(); } catch (e) { /* noop */ } }
-      reject(new Error("モデル応答がタイムアウトしました (" + Math.round(limit / 1000) + "s)"));
-    }, limit);
-    session.prompt(text, merged).then(
-      function(r) {
-        clearTimeout(timer);
-
-        resolve(r);
-      },
-      function(e) {
-        clearTimeout(timer);
-        // kErrorUnknown は処理が成功しているので無視
-        if (e && e.message && e.message.indexOf("kErrorUnknown") >= 0) {
-          console.debug("Prompt API: kErrorUnknown (実処理は成功)", e);
-          resolve("");  // エラーを抑制、処理続行
-          return;
-        }
-        addMsg("error", humanizeError(e));
-        console.error("LLM Error:", e);
-        reject(e);
-      });
+  var s = session;
+  return withWatchdog(function(signal) {
+    var merged = Object.assign({}, opts || {});
+    if (signal) merged.signal = signal;
+    /* ?schema=0: 構造化出力 (responseConstraint) を使わない。構造化出力が
+     * モデルプロセスを落とす環境 (Edge 等) の切り分け用 */
+    if (cfgParam("schema") === "0") delete merged.responseConstraint;
+    return streamPrompt(s, text, merged);
+  }, limit, "モデル応答がタイムアウトしました (" + Math.round(limit / 1000) + "s)")
+  .catch(function(e) {
+    // kErrorUnknown は処理が成功しているので無視 (蓄積した部分出力があればそれを返す)
+    if (e && e.message && e.message.indexOf("kErrorUnknown") >= 0) {
+      console.debug("Prompt API: kErrorUnknown (実処理は成功)", e);
+      return e.partial || "";
+    }
+    if (!turnCancelled()) console.warn("Prompt API error:", e);  // 画面への報告は呼び出し側が一度だけ行う
+    throw e;
   });
 }
 
@@ -2306,6 +2391,7 @@ function lmPrompt(text, retried) {
       _stallCount = 0;  // 正常応答でリセット
       return r;
     }).catch(function(err) {
+      if (turnCancelled()) throw err;
       if (schema && err && (err.name === "NotSupportedError" || err.name === "TypeError")) {
         _schemaTier++;
         addMsg("note", "構造化出力のスキーマが拒否されたためレベルを下げます (tier " +
@@ -2325,6 +2411,7 @@ function lmPrompt(text, retried) {
     });
   };
   return exec().catch(function(err) {
+    if (turnCancelled()) throw err;
     if (err && err.name === "QuotaExceededError") {
       // コンテキスト超過 → セッションを作り直して一度だけ再試行 (履歴は失われる)
       resetSession("コンテキスト上限に達したためセッションをリセットしました。");
@@ -2418,6 +2505,7 @@ function promptJSON(text, schema, fallbackSchema) {
     ? promptWithTimeout(text, { responseConstraint: schema }, STAGE_TIMEOUT_MS)
     : promptWithTimeout(text, null, STAGE_TIMEOUT_MS);
   return call.catch(function(err) {
+    if (turnCancelled()) throw err;
     if (schema && err && (err.name === "NotSupportedError" || err.name === "TypeError")) {
       // 絞り込みスキーマが拒否されたら基本スキーマ → プレーンの順に段階フォールバック
       return promptJSON(text, fallbackSchema || null);
@@ -2468,6 +2556,7 @@ function twoPhaseAction(promptText, linked, suggestion) {
           return JSON.stringify({ action: "tool_call", tool: tool, arguments: args || {} });
         })
         .catch(function(err) {
+          if (turnCancelled()) throw err;
           _argsSchemaBroken = true;
           /* 呼び出し候補が同じツールなら、その引数で即続行 (待ち時間ゼロの決定的フォールバック) */
           if (suggestion && suggestion.tool === tool) {
@@ -2480,6 +2569,7 @@ function twoPhaseAction(promptText, linked, suggestion) {
         });
     })
     .catch(function(err) {
+      if (turnCancelled()) throw err;
       selStep.done("単段へ切替", friendlyErr(err));
       return lmPrompt(promptText);
     });
@@ -2724,16 +2814,9 @@ function promptOneShot(text, timeoutMs) {
     return promptWithTimeout(text, {}, timeoutMs);
   }
   return Promise.resolve(baseSession.clone()).then(function(s) {
-    var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
-    var p = new Promise(function(resolve, reject) {
-      var timer = setTimeout(function() {
-        if (ctrl) { try { ctrl.abort(); } catch (e) { /* noop */ } }
-        reject(new Error("書き直しがタイムアウトしました"));
-      }, timeoutMs || 20000);
-      s.prompt(text, ctrl ? { signal: ctrl.signal } : {}).then(function(r) {
-        clearTimeout(timer); resolve(r);
-      }, function(e) { clearTimeout(timer); reject(e); });
-    });
+    var p = withWatchdog(function(signal) {
+      return s.prompt(text, signal ? { signal: signal } : {});
+    }, timeoutMs || 20000, "書き直しがタイムアウトしました");
     var cleanup = function() { try { if (s.destroy) s.destroy(); } catch (e) { /* noop */ } };
     return p.then(function(r) { cleanup(); return r; }, function(e) { cleanup(); throw e; });
   });
@@ -2793,7 +2876,7 @@ function _agentTurnRun(userText) {
   var stats = { steps: 0, repaired: false, refs: statsRefs };
   lastTurnStats = stats;
   lastTurnAnswer = null;
-  beginTurnSteps();  // 進行ステップの表示先をこのターン用に用意
+  ensureTurnSteps();  // 進行ステップの行 (セッション準備で既に開いていれば同じ行に続ける)
   var pendingLesson = null;  // 直前の失敗呼び出し (成功が続けば followup を記録)
   var turnCalls = [];  // このターンで実行したツール呼び出し
   var nudges = 0;      // ツール未使用の直答への差し戻し回数 (最大2)
@@ -2846,6 +2929,15 @@ function _agentTurnRun(userText) {
         if (salvaged) {
           act = { action: "answer", answer: salvaged };
         }
+      }
+      /* 空応答はモデルプロセスの停止 (クラッシュ) で起きる。出力し直しを頼むと
+       * 次の呼び出しも落ちてクラッシュ回数の上限を消費するだけなので、ここで止める */
+      if (String(raw == null ? "" : raw).trim() === "") {
+        if (genStep) genStep.done("応答なし");
+        addMsg("error", "内蔵 AI から応答が得られませんでした。モデルプロセスが停止した可能性があります " +
+          "(on-device-internals ページの Model crash count を確認してください)。");
+        logTurn("(エラー) 空応答");
+        return;
       }
       if (!act || (act.action !== "tool_call" && act.action !== "answer")) {
         // 壊れた JSON は一度だけ修復を促す ("limit**: 10" 等が実測で発生)
@@ -3003,6 +3095,12 @@ function _agentTurnRun(userText) {
         return next();
       });
     }).catch(function(err) {
+      if (turnCancelled()) {
+        if (genStep) genStep.done("中止");
+        addMsg("note", "中止しました");
+        logTurn("(中止)");
+        return;
+      }
       if (genStep) genStep.done("エラー", String(err && err.message || err));
       addMsg("error", humanizeError(err));
       logTurn("(エラー) " + (err && err.message || err));
@@ -3214,15 +3312,22 @@ function evalCases(cases, label) {
         function runCase() {
           attempt++;
           var mark = toolCallLog.length;
+          var ctrl = newTurnController();
+          var caseTimer = null;
           return freshSession().then(function() {
-            // ケース単位の上限。超えたら FAIL 記録して次のケースへ進む
+            // ケース単位の上限。超えたら実行中の呼び出しを中止し、FAIL 記録して次のケースへ進む
             return Promise.race([
               agentTurn(cs.prompt).then(function() { return false; }),
               new Promise(function(resolve) {
-                setTimeout(function() { resolve(true); }, CASE_TIMEOUT_MS);
+                caseTimer = setTimeout(function() {
+                  if (_turnCtrl === ctrl) abortTurn();
+                  resolve(true);
+                }, CASE_TIMEOUT_MS);
               }),
             ]);
           }).then(function(t) {
+            if (caseTimer) clearTimeout(caseTimer);
+            endTurnSteps(t ? "中止" : null);
             var calls = toolCallLog.slice(mark);
             var answer = lastTurnAnswer || "";
             /* まれにモデルが空応答で終わる (呼び出しも回答も無い)。
@@ -3453,7 +3558,17 @@ function setBusy(b) {
   busy = b;
   sendBtn.disabled = b || !lmReady;
   inputEl.disabled = b;
+  cancelBtn.hidden = !b;
+  cancelBtn.disabled = false;
+  if (!b) _turnCtrl = null;
 }
+
+/* 「中止」: 実行中の create() / prompt() を打ち切ってターンを終える
+ * (create 中は作りかけのセッションが破棄され、prompt 中はその呼び出しだけが止まる) */
+cancelBtn.addEventListener("click", function() {
+  cancelBtn.disabled = true;
+  abortTurn();
+});
 
 /* 送信ボタンの無効状態を例・「次の一手」チップに同期する (視覚一貫性)。
  * sendBtn.disabled は busy 以外 (モデルの準備状態等) からも変わるため、
@@ -3544,12 +3659,18 @@ document.getElementById("composer").addEventListener("submit", function(e) {
   inputEl.value = "";
   addMsg("user", text);
   setBusy(true);
+  newTurnController();
   freshSession()
     .then(function() { return agentTurn(text); })
     .catch(function(err) {
-      addMsg("error", humanizeError(err));
+      if (turnCancelled()) addMsg("note", "中止しました");
+      else addMsg("error", humanizeError(err));
     })
-    .then(function() { setBusy(false); inputEl.focus(); });
+    .then(function() {
+      endTurnSteps(turnCancelled() ? "中止" : null);
+      setBusy(false);
+      inputEl.focus();
+    });
 });
 
 inputEl.addEventListener("keydown", function(e) {
@@ -3561,26 +3682,39 @@ inputEl.addEventListener("keydown", function(e) {
 
 /* ================= セットアップ案内 ================= */
 
-function showSetupPanel() {
+/* reason: "nolm" = LanguageModel が見えない / "unavailable" = availability() が unavailable。
+ * どちらで止まったかを案内の先頭に出し、利用者が確認先を絞れるようにする */
+function showSetupPanel(reason) {
   var el = document.createElement("div");
   el.id = "setup";
   var isBrowserEdge = isEdge();
+  var diag = reason === "nolm"
+    ? "このページから <code>LanguageModel</code> が見えません (フラグが無効か、Prompt API を含まないチャネル・版の可能性)"
+    : "<code>LanguageModel.availability()</code> が <b>unavailable</b> を返しました (この端末では対応モデルを実行できない判定)。" +
+      "モデルプロセスが繰り返しクラッシュした後もこの判定になります。その場合の復旧手順: " +
+      "(1) アドレスバーに <code>edge://on-device-internals</code> (Chrome は <code>chrome://on-device-internals</code>) を入力して開く " +
+      "(2) Model Status タブの「Model crash count (current/maximum)」の横にある <b>Reset</b> を押す " +
+      "(3) ブラウザを完全に終了 (Mac は ⌘Q) して起動し直す (4) このページを開き直す";
+  var diagHtml = "<div class='setup-diag'>診断: " + diag + "</div>";
   el.innerHTML = isBrowserEdge ?
-    "<h2>Microsoft Edge の Prompt API が利用できません</h2>" +
+    "<h2>Microsoft Edge の Prompt API が利用できません</h2>" + diagHtml +
     "<ol>" +
-    "<li>デスクトップ版 Microsoft Edge 131 以降を使う</li>" +
-    "<li><code>edge://flags</code> で「Prompt API for on-device language model」を <b>Enabled</b> にする</li>" +
-    "<li>Edge を再起動する (初回利用時にモデル (Phi-mini) がダウンロードされます)</li>" +
+    "<li>Microsoft Edge の <b>Canary または Dev</b> チャネル (138.0.3309.2 以降) を使う。安定版には Prompt API は含まれていません</li>" +
+    "<li><code>edge://flags</code> で「Prompt API for on-device language model」を <b>Enabled</b> にして再起動する</li>" +
+    "<li><code>edge://on-device-internals</code> の <b>Device performance class</b> を確認する。High 以上なら Phi-4-mini が使える。" +
+    "Medium / Low の場合は (150.0.4070 以降)「Enable prerelease on-device language model」も Enabled にして Aion-1.0-Instruct を使う</li>" +
+    "<li>初回利用時にモデルがダウンロードされる (空きストレージ 20GB 以上・GPU VRAM 5.5GB 以上・従量制でないネットワークが必要)</li>" +
     "</ol>" +
     "<div>詳細: <a href='https://learn.microsoft.com/ja-jp/microsoft-edge/web-platform/prompt-api' target='_blank'>Microsoft Edge の Prompt API</a></div>"
     :
-    "<h2>Chrome の内蔵 AI (Prompt API) が利用できません</h2>" +
+    "<h2>Chrome の内蔵 AI (Prompt API) が利用できません</h2>" + diagHtml +
     "<ol>" +
     "<li>デスクトップ版 Chrome 138 以降を使う</li>" +
     "<li><code>chrome://flags/#prompt-api-for-gemini-nano</code> を <b>Enabled</b> にする</li>" +
     "<li><code>chrome://flags/#optimization-guide-on-device-model</code> を <b>Enabled BypassPerfRequirement</b> にする</li>" +
     "<li>Chrome を再起動する (初回利用時にモデルがダウンロードされます。" +
-    "<code>chrome://components</code> の Optimization Guide On Device Model で状態確認可)</li>" +
+    "<code>chrome://components</code> の Optimization Guide On Device Model と " +
+    "<code>chrome://on-device-internals</code> で状態確認可)</li>" +
     "</ol>" +
     "<div>目安のハードウェア要件: 空きストレージ 22GB / VRAM 4GB 超。詳細: " +
     "developer.chrome.com/docs/ai/prompt-api</div>";
@@ -3761,11 +3895,12 @@ function runDiscovery() {
 }
 
 /* list_datasets UI からのデータセット選択で呼ばれる。
- * inspect_dataset を実行して、その結果でセッション初期化 → 会話開始 */
+ * inspect_dataset を実行して、その結果でセッション初期化 → 会話開始。
+ * 送信可否 (setBusy) は呼び出し側が最後まで管理する (途中で送信が開くと、
+ * 続く事前作成と質問のターンが同じセッションを取り合うため) */
 function inspectAndStartSession(dataset) {
   var key = "apcli-preview:catalog4:" + dataset.dataset_id;
   selectedDatasetId = dataset.dataset_id;
-  busy = true;
   return apiCall("inspect_dataset", { dataset_id: dataset.dataset_id })
     .then(function(result) {
       var entry = extractCatalogEntry(dataset, result.structuredContent || null);
@@ -3781,12 +3916,7 @@ function inspectAndStartSession(dataset) {
       } else {
         addMsg("error", "データセット「" + dataset.dataset_id + "」の情報を取得できませんでした");
       }
-    })
-    .then(function() { busy = false; });
-}
-
-function initWithoutInspect(datasets) {
-  return Promise.resolve([]);
+    });
 }
 
 function finishDiscovery(entries, datasets) {
@@ -3800,49 +3930,6 @@ function finishDiscovery(entries, datasets) {
   inputEl.placeholder = defaultPlaceholder();
   if (lmReady) resetSession(null);
 }
-
-/* ================= LLM 応答からツール呼び出しを抽出 ================= */
-/**
- * LLM 応答から JSON フォーマットのツール呼び出しを抽出
- * 想定フォーマット (systemPrompt 指定):
- *   {"action":"tool_call","tool":"<name>","arguments":{...}}
- * または従来形式:
- *   {"tool": "tool_name", "args": {...}}
- */
-function extractToolCallFromResponse(text) {
-  if (!text || typeof text !== "string") return null;
-
-  // JSON ブロック（```json ... ```）から抽出
-  var jsonMatch = text.match(/```json\n?([\s\S]*?)\n?```/);
-  if (jsonMatch) {
-    try {
-      var parsed = JSON.parse(jsonMatch[1]);
-      if (parsed.action === "tool_call" && parsed.tool && TOOL_TEMPLATES[parsed.tool]) {
-        return { tool: parsed.tool, args: parsed.arguments || {} };
-      }
-    } catch (e) { /* JSON parse error */ }
-  }
-
-  // インライン JSON から抽出（{...}）
-  var jsonStart = text.indexOf("{");
-  if (jsonStart >= 0) {
-    var jsonStr = text.substring(jsonStart);
-    try {
-      var parsed = JSON.parse(jsonStr);
-      // systemPrompt フォーマット
-      if (parsed.action === "tool_call" && parsed.tool && TOOL_TEMPLATES[parsed.tool]) {
-        return { tool: parsed.tool, args: parsed.arguments || {} };
-      }
-      // 従来形式
-      if (parsed.tool && TOOL_TEMPLATES[parsed.tool]) {
-        return { tool: parsed.tool, args: parsed.args || {} };
-      }
-    } catch (e) { /* JSON parse error */ }
-  }
-
-  return null;
-}
-
 
 function init() {
   fetch("/api/describe").then(function(r) { return r.json(); }).then(function(desc) {
@@ -3859,26 +3946,24 @@ function init() {
     LM = lmNamespace();
     if (!LM) {
       setStatus("内蔵 AI: 利用不可", "err");
-      showSetupPanel();
+      showSetupPanel("nolm");
       return;
     }
     return lmAvailability(LM).then(function(avail) {
       if (avail === "unavailable") {
         setStatus("内蔵 AI: 利用不可", "err");
-        showSetupPanel();
+        showSetupPanel("unavailable");
         return;
       }
       if (avail === "available") {
         lmReady = true;
-        sendBtn.disabled = false;
-        setStatus("内蔵 AI: 利用可能 (Gemini Nano)", "ok");
-
-        // PreviewSession を初期化
-        session = new PreviewSession();
-        return session.init().then(function() {
-          if (isEvalMode()) { runEval(); return; }  // 自動実行 (watch ループ用)
-          inputEl.focus();
-        });
+        setBusy(busy);  // 送信可否を lmReady に同期する
+        setStatus("内蔵 AI: 利用可能 (" + modelName() + ")", "ok");
+        /* セッションはデータセット選択後に ensureSession() で作る。この時点では
+         * システムプロンプトが空で、選択時に作り直すことになるため */
+        if (isEvalMode()) { runEval(); return; }  // 自動実行 (watch ループ用)
+        inputEl.focus();
+        return;
       }
       // downloadable / downloading — 準備完了までチャットは開放しない。
       // ダウンロードはバナーのボタン (ユーザー操作) からのみ開始する。

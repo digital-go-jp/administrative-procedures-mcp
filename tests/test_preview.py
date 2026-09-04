@@ -283,3 +283,147 @@ def test_http_security_headers(http_server):
     _, _, api_headers = _raw_request(
         http_server, "GET", "/api/describe", {"Host": "127.0.0.1"})
     assert api_headers.get("x-content-type-options") == "nosniff"
+
+
+def test_http_host_has_no_legacy_prompt_api_shims(http_server):
+    """Chrome 138 以前の API 形 (window.ai / capabilities / systemPrompt) と、
+    自分自身を再帰呼び出しする PreviewSession ラッパーを残さない。"""
+    _, body = _get(http_server, "/")
+    for legacy in (
+        "PreviewSession",
+        "window.ai",
+        "capabilities()",
+        "systemPrompt: systemPrompt",
+        "tokensSoFar",
+        "initWithoutInspect",
+        "extractToolCallFromResponse",
+    ):
+        assert legacy not in body, legacy
+
+
+def test_http_host_uses_current_prompt_api_names(http_server):
+    """Prompt API の現行名 (contextUsage / contextWindow / contextoverflow / samplingMode) を使う。
+    旧名 (inputUsage / quotaoverflow) は後方互換としてのみ残す。"""
+    _, body = _get(http_server, "/")
+    assert "contextUsage" in body and "contextWindow" in body
+    assert '"contextoverflow"' in body and '"quotaoverflow"' in body
+    assert 'samplingMode: "most-predictable"' in body
+    fresh = body.split("function freshSession(")[1].split("\n}")[0]
+    assert "watchContextOverflow(s)" in fresh
+
+
+def test_http_host_reports_prompt_errors_once(http_server):
+    """モデル呼び出しの失敗は呼び出し側 (agentTurn 等) が一度だけ表示する。
+    promptWithTimeout 内で表示すると、フォールバックで処理される失敗まで画面に出る。"""
+    _, body = _get(http_server, "/")
+    fn = body.split("function promptWithTimeout(")[1].split("\n}")[0]
+    assert 'addMsg("error"' not in fn
+
+
+def test_http_host_tile_selection_owns_busy_state(http_server):
+    """タイル選択の送信可否は setBusy() でハンドラが最後まで管理し、実行中の選択は受け付けない
+    (途中で送信が開くと、事前作成と質問のターンが同じセッションを取り合う)。"""
+    _, body = _get(http_server, "/")
+    fn = body.split("function inspectAndStartSession(")[1].split("\n}")[0]
+    assert "setBusy(" not in fn and "busy = " not in fn
+    handler = body.split('msg.type === "dataset-selected"')[1].split("return;\n  }")[0]
+    assert "sendBtn.disabled" not in handler
+    assert "if (busy) {" in handler
+    assert handler.index("setBusy(true);") < handler.index("inspectAndStartSession(")
+    assert "setBusy(false);" in handler.split("inspectAndStartSession(")[1]
+
+
+def test_http_host_setup_panel_shows_diagnosis(http_server):
+    """Prompt API が使えないとき、LanguageModel が無いのか availability() が unavailable なのかを
+    案内の先頭に出す。Edge の手順は現行ドキュメント (Canary/Dev、on-device-internals) に合わせる。"""
+    _, body = _get(http_server, "/")
+    assert "function showSetupPanel(reason)" in body
+    assert 'showSetupPanel("nolm")' in body and 'showSetupPanel("unavailable")' in body
+    panel = body.split("function showSetupPanel(reason)")[1].split("\n}")[0]
+    assert "setup-diag" in panel
+    assert "edge://on-device-internals" in panel
+    assert "Edge 131" not in panel
+
+
+def test_http_host_prompt_recreates_missing_session(http_server):
+    """ターン中にセッションが reset されていても、作り直してから呼ぶ (エラーで終えない)。"""
+    _, body = _get(http_server, "/")
+    fn = body.split("function promptWithTimeout(")[1].split("\n}")[0]
+    assert "return ensureSession().then(" in fn.split("var limit")[0]
+
+
+def test_http_host_shows_progress_for_every_wait(http_server):
+    """待ち時間はすべて進行ステップの行に出す: 行はステップ開始時に自動生成し (ensureTurnSteps)、
+    ターン終了で閉じる (endTurnSteps)。実行中ステップには経過秒を付け、タイマーを残さない。"""
+    _, body = _get(http_server, "/")
+    assert "function ensureTurnSteps()" in body
+    assert "function endTurnSteps(" in body
+    assert "beginTurnSteps" not in body
+    step = body.split("function stepStart(")[1].split("\n}")[0]
+    assert "var host = ensureTurnSteps();" in step
+    assert "setInterval" in step and "clearInterval" in step and "秒" in step
+    end = body.split("function endTurnSteps(")[1].split("\n}")[0]
+    assert "host.timers.forEach(clearInterval)" in end
+
+
+def test_http_host_session_creation_is_visible_and_bounded(http_server):
+    """create() は「セッションを準備中」のステップとして見せ、watchdog (?ctimeout=) で打ち切る。
+    打ち切り後は次の create 試行に進まない。"""
+    _, body = _get(http_server, "/")
+    ensure = body.split("function ensureSession()")[1].split("\n}")[0]
+    assert 'stepStart("内蔵 AI のセッションを準備中")' in ensure
+    assert "withWatchdog(" in ensure and "CREATE_TIMEOUT_MS" in ensure
+    assert "var CREATE_TIMEOUT_MS" in body and 'get("ctimeout")' in body
+    assert "function createSession(onProgress, signal)" in body
+    create = body.split("function createSession(onProgress, signal)")[1].split("\n}")[0]
+    assert "if (signal && signal.aborted) throw err;" in create
+
+
+def test_http_host_streams_partial_output(http_server):
+    """promptStreaming で生成中の出力を進行ステップに流す (?stream=0 で prompt() に戻せる)。
+    途中で失敗した場合も蓄積分 (err.partial) を保持する。"""
+    _, body = _get(http_server, "/")
+    assert "function streamPrompt(" in body
+    assert 'typeof s.promptStreaming !== "function"' in body
+    assert 'cfgParam("stream") !== "0"' in body
+    pwt = body.split("function promptWithTimeout(")[1].split("\n}")[0]
+    assert "streamPrompt(" in pwt and "e.partial" in pwt
+    assert "モデル応答がタイムアウトしました" in pwt  # lmPrompt の stall 判定が文言を見る
+
+
+def test_http_host_cancel_button_aborts_turn(http_server):
+    """「中止」ボタンは実行中の create()/prompt() を共有 AbortController で打ち切る。
+    ターン外 (タイル選択後の事前作成、eval のケース上限) からも同じ仕組みを使う。"""
+    _, body = _get(http_server, "/")
+    assert '<button type="button" id="cancel" hidden>中止</button>' in body
+    assert "function abortTurn(" in body and "function turnCancelled(" in body
+    busy = body.split("function setBusy(b)")[1].split("\n}")[0]
+    assert "cancelBtn.hidden = !b" in busy
+    watchdog = body.split("function withWatchdog(")[1].split("\n}")[0]
+    assert 'removeEventListener("abort"' in watchdog
+    selected = body.split('msg.type === "dataset-selected"')[1].split("return;\n  }")[0]
+    assert "ensureSession()" in selected and "newTurnController()" in selected
+    evals = body.split("function evalCases(")[1]
+    assert "newTurnController()" in evals and "abortTurn()" in evals
+
+
+def test_http_host_explains_model_crash_errors(http_server):
+    """モデルプロセスの連続クラッシュ ("crashed too many times") は、復旧手順 (crash count の Reset と再起動) を
+    添えた文言で表示する。unavailable の診断にも同じ手掛かりを出す。"""
+    _, body = _get(http_server, "/")
+    fn = body.split("function humanizeError(")[1].split("\n}")[0]
+    assert '"crashed too many times"' in fn and "Reset" in fn
+    panel = body.split("function showSetupPanel(reason)")[1].split("\n}")[0]
+    assert "Model crash count" in panel
+
+
+def test_http_host_empty_response_is_not_repaired(http_server):
+    """空応答 (モデルプロセスの停止で起きる) には出力し直しを頼まず、その場で止める。
+    ?schema=0 で構造化出力 (responseConstraint) を切って切り分けできる。"""
+    _, body = _get(http_server, "/")
+    turn = body.split("function _agentTurnRun(")[1]
+    empty = turn.split('.trim() === "")')[1].split("\n      }")[0]
+    assert "応答が得られませんでした" in empty and "return;" in empty
+    assert turn.index('.trim() === "")') < turn.index("壊れた JSON は一度だけ修復を促す")
+    pwt = body.split("function promptWithTimeout(")[1].split("\n}")[0]
+    assert 'cfgParam("schema") === "0"' in pwt and "delete merged.responseConstraint" in pwt

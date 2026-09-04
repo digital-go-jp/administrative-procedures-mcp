@@ -119,17 +119,19 @@ fields:
 
 ### ロール (role)
 
-| ロール | ComponentRole | groupable | filterable | aggregatable | data_type デフォルト |
-|--------|---------------|-----------|------------|--------------|---------------------|
-| `id` | IDENTIFIER | No | Yes | No | string |
-| `dim` | DIMENSION | Yes | Yes | No | string |
-| `measure` | MEASURE | No | No | Yes | integer |
-| `attr` | ATTRIBUTE | Yes | No | No | string |
+| ロール | ComponentRole | groupable | aggregatable | data_type デフォルト |
+|--------|---------------|-----------|--------------|---------------------|
+| `id` | IDENTIFIER | No | No | string |
+| `dim` | DIMENSION | Yes | No | string |
+| `measure` | MEASURE | No | Yes | integer |
+| `attr` | ATTRIBUTE | Yes | No | string |
 
 - **`id`**: レコードの一意識別子
-- **`dim`**: グループ化・フィルタリング可能な分類軸
+- **`dim`**: グループ化可能な分類軸
 - **`measure`**: 数値データ。`sum`, `avg`, `min`, `max` で集計可能
 - **`attr`**: 属性。デフォルトでグループ化可能。`groupable: false` で無効化可
+
+`where` によるフィルタはロールを問わず全フィールドで使えます（文字列は部分一致、配列は IN、数値は `$gte` / `$lte` の範囲指定）。
 
 ### フィールドオプション
 
